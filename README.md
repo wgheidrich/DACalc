@@ -52,11 +52,11 @@ Most math library functions like `exp`, `pow`, `sin`, `acos` etc. only make phys
 
 Angles and solid angles have a special status in that they are technically unitless quantities. For example, an angle `alpha` in radians \[rad\] is defined as the arc length of the circle segment subtended by the angle, divided by the radius of the circle. The dimension of an angle is therefore `length/length = 1`. In the same way, the solid angle in steradian \[sr\] has a dimension of `area/area = length²/length² = 1`.
 
-Despite this, it is often useful and in some cases vital to keep track of angles and solid angles as pseudo-dimensions, for example when we want to use and convert between different units such as radians, degrees, and arc seconds. On the other hand, certain types of approximations frequently used in Physics make can easily result in added or dropped angle and solid angle units, for example when we make the paraxial (small angle) approximation in optics: sin(x) &#8776; x, cos(x) &#8776; 1, tan(x) &#8776; x. 
+Despite this, it is often useful and in some cases vital to keep track of angles and solid angles as pseudo-dimensions, for example when we want to use different units such as radians, degrees, and arc seconds, and convert between them. On the other hand, certain types of approximations frequently used in Physics can easily result in added or dropped angle and solid angle units, for example when we make the paraxial (small angle) approximation in optics: sin(x) &#8776; x, cos(x) &#8776; 1, tan(x) &#8776; x. 
 
-For this reason, DACalc introduces angles and solid angles as pseudo dimensions with much reduced dimension checking. For example it is possible to add an angle and a dimensionless quantity, or to take a the sine of a dimensionless quantity. On the other hand DACalc ensures that the result of a sine is always unit-less and the result of an arc sine is always an angle. Although not strictly necessary in most cases, it is certainly possible to be deliberate and explicit about angular units even with physical approximations. For example, if `alpha` is an angle with units of \[rad\], then the small angle approximation of `sin(alpha)` would be `\alpha [1/rad]`, and if `x` is a dimensionless quantity then `sin(x [rad])` would be approximated as `x`.
+For this reason, DACalc introduces angles and solid angles as pseudo dimensions with much reduced dimension checking. For example it is possible to add an angle and a dimensionless quantity, or to compute the sine of a dimensionless quantity. On the other hand, DACalc ensures that the result of a sine is always unitless and the result of an arc sine is always an angle. Although not strictly necessary in most cases, it is certainly possible to be deliberate and explicit about angular units even with physical approximations. For example, if `alpha` is an angle in units of radians, then the small angle approximation of `sin(alpha)` would be `alpha [1/rad]`, and if `x` is a dimensionless quantity then `asin(x)` would be approximated as `x [rad]`.
 
-The reduced strictness of the unit checking for angles means that it is often not necessary to go to this level of pedantry in calculations, however in some situations the output may then have some spurious radian or steradian components.
+The reduced strictness of the unit checking for angles means that it is often not necessary to go to this level of pedantry in calculations, however at the potential risk of some spurious radian or steradian terms in the outputs.
 
 
 
@@ -67,14 +67,14 @@ Dimensional Analysis is the process of trying to create a quantity of a certain 
 
 In this case there is a unique solution to the problem, which represents the ideal gas law. We found this law even though it is not in any way hard coded into DACalc, just by trying to match dimensions.
 
-It is not always the case that we will find a unique solution -- there can be multiple solutions, for example when one of the quantities is dimensionless, or if we enter multiple quantities with the same dimension. However, we can typically still learn more about the physical problem by studying the solution space.
+It is not always the case that we will find a unique solution -- there can also be multiple solutions, for example when one of the quantities is dimensionless, or if we enter multiple quantities with the same dimension. However, we can typically still learn more about the physical problem by studying the solution space.
 
 One more remark about the above example: please note that the numerical value does match the widely known volume of one kilomol of gas at standard temperature and pressure. Again, we found this value without knowing the actual equation.
 
 
 ## Python API<a name="python"></a>
 
-While the DACalc calculator is very useful as a standalone tool, it is not a full-fledged programming language. If you need to do unit-based calculations in a complex computation, you can use the DACalc Python API, which introduces the same feature set into Python, by introducing a new class `ConcreteNumber`. A simple example similar to the above torque calculation looks like this in the Python API:
+While the DACalc calculator is very useful as a standalone tool, it is not a full-fledged programming language. To perform unit-based calculations in a complex program, one can use the DACalc Python API, which introduces the same feature set into Python, by introducing a new class `ConcreteNumber`. A simple example similar to the above torque calculation looks like this in the Python API:
 
 ```Python
 from dacalc.concretenumber import ConcreteNumber as CN
