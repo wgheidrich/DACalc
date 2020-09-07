@@ -24,7 +24,7 @@ class DALexer(RegexLexer):
             (r'(sqrt|sin|cos|tan|asin|acos|atan|atan2|abs|log|ln|log2|log10|pow)', Name.Function),
             (r'[a-zA-Z_]+', Name.Variable),
             (r'(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?', Number),
-            (r'[\+\-\*/,=\(\)\^\%]+', Operator)
+            (r'[\+\-\*/,=\(\)\{\}\^\%]+', Operator)
         ]
     }
 

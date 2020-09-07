@@ -392,7 +392,7 @@ def p_def(t):
         # just overwriting a previous user-defined unit
         cn.add_unit_to_dict(t[2],t[3])
         print("Redefined unit",t[2],'=',t[3])
-    elif t[2] in u.keys():
+    elif t[2] in CN.units.keys():
         # if the unit exists but is not user-defined then this
         # is an attempt to redefine a built-in unit
         print("Cannot redefine built-in unit",file = sys.stderr)

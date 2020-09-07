@@ -15,10 +15,10 @@ setup(
     version='1.0',
     packages=find_packages(),
     description='Dimensional Analysis Calculator',
-    long_description=readme,
     author='Wolfgang Heidrich',
     author_email="wolfgang.heidrich@kaust.edu.sa",
     license="Creative Commons Atribute Non-Commercial (CC BY-NC)",
+    url="https://github.com/wgheidrich/DACalc",
     install_requires=[
         'jupyter_client', 'IPython', 'ipykernel', 'ply'
     ],
@@ -27,9 +27,16 @@ setup(
         "console_scripts" : ["dacalc = dacalc.calculator:main"]
     },
     classifiers=[
+        'Environment :: Console',
+        'Framework :: Jupyter',
         'Intended Audience :: Developers',
+        'Intended Audience :: Education',
+        'Intended Audience :: Science/Research',
+        'Intended Audience :: Manufacturing',
+        'Topic :: Scientific/Engineering :: Mathematics',
         'Programming Language :: Python :: 3',
     ],
+    long_description=readme,
 )
 
 
