@@ -1,0 +1,8 @@
+*.da
+__pycache__/
+*.pyc
+*.out
+dalextab.py
+daparsetab.py
+unitlextab.py
+unitparsetab.py
