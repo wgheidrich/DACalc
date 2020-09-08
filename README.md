@@ -108,6 +108,6 @@ Other resources:
 
 - Wikipedia page on [Dimensional Analysis](https://en.wikipedia.org/wiki/Dimensional_analysis)
 
-- Khan Academy video on [Dimensional Academy](https://www.khanacademy.org/math/algebra/x2f8bb11595b61c86:working-units/x2f8bb11595b61c86:rate-conversion/v/dimensional-analysis-units-algebraically)
+- Khan Academy video on [Dimensional Analysis](https://www.khanacademy.org/math/algebra/x2f8bb11595b61c86:working-units/x2f8bb11595b61c86:rate-conversion/v/dimensional-analysis-units-algebraically)
 
 - Thompson and Taylor: [Guide for the Use of the International System of Units (SI)](https://physics.nist.gov/cuu/pdf/sp811.pdf). NIST Special Edition 811, 2008 Edition. 
