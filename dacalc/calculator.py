@@ -244,7 +244,9 @@ def p_helpline(t):
         ? <topic>
   
   where <topic> is one of (any unique prefix will do):
-        
+
+        basics:       basic calculations
+        commands:     all commands
         operators:    built-in arithmetic operators
         func:         built-in functions (short list)
         functions:    built-in functions (details)
@@ -252,6 +254,136 @@ def p_helpline(t):
         units:        currently defined units
         variables:    currently defined variables
         '''
+    elif t[2] == 'basics'[:len(t[2])]:
+        t[0] = '''
+  At the core of dacalc is a scientific calculator that keeps tracks of
+  units and dimensions, and performs automatic unit conversion. Here is
+  a simple example for computing a force and a torque in different unit
+  systems:
+
+        Welcome to the dimensional analysis calculator!
+        Try "?" for help...
+        DA > m = 5[kg]
+        m = 5 [kg]
+        DA > a = 10[m/s^2]
+        a = 10 [m s⁻²]
+        DA > F = m*a
+        F = 50 [N]
+        DA > l = 10[in]
+        l = 254 [mm]
+        DA > T = F*l
+        T = 12.7 [J]
+        DA > [lbf in] T
+        112.404 [lbf in]
+        DA > 
+        
+   Refer to the 'commands' help page for more details for more options
+   on custom units and result display.
+
+   Of course dacalc also supports all the usual math library functions
+   (see help page for 'functions'). 
+
+        DA > r = 5[cm]
+        r = 50 [mm]
+        DA > alpha = 60[deg]
+        alpha = 1.0472 [rad]
+        DA > l = r*sin(alpha)
+        l = 43.3013 [mm]
+        DA > 
+        DA > beta = atan2(3[mm],5[cm])
+        beta = 59.9282 [mrad]
+        DA > [deg] beta
+        3.43363 [deg]        
+        '''
+    elif t[2] == 'commands'[:len(t[2])]:
+        t[0] = '''
+  Apart from arithmetic expressions, variable assignments, and unit conversions
+  (see help page 'basics') several special commands are supported. They are:
+
+        use :      select output units and other choices for output formatting
+        
+        def :      define a new unit
+
+        import :   load a dacalc script
+        
+        analyze :  perform dimensional analysis on a set of variables
+
+  The specifics of the individual commands are as follows:
+
+  * use:
+        The use command controls the output of values. It has three different
+        variants: 
+        
+        use <system> :  choose a specific unit system for outputing all
+                        quantities. Supported systems are SI and US, as
+                        well as SI_base and US_base. The latter two only
+                        utilize base units, so that for example a force
+                        would be displayed as [kg m s^-2] instead of [N]
+
+        use [unit] :    choose a default unit for quantities of a specific
+                        dimension. Examples:
+
+                        DA > use [lb]
+                        Using [lb]
+                        DA > 5[kg]
+                        11.0231 [lb]
+
+                        DA > use [N m]
+                        Using [N m]
+                        DA > 2[kg] * _g * 1[m]
+                        19.6133 [N m]
+
+        use <digits> :  where digits is a non-negative integer. This selects
+                        the number of displayed digits in numerical values.
+
+  * def:
+        The def command introduces new units.
+
+        def unit expr : where "unit" is the name of the new unit, and "expr"
+                        is an artithmetic expression that calculates the value
+                        of the new unit expressed in known qunatities. For
+                        example, to define the light year as a unit:
+
+                        DA > def ly 365.25[d] * _c
+                        New unit ly = 9.46073e+15 [m]
+                        DA > .2[ly]
+                        1.89215e+15 [m]
+  
+  * import:
+        Imports a dacalc script. All variables, units and settings made in
+        the script will become available. Syntax:
+
+        import file :   where file is  a file name enclosed in single (') or
+                        double (") quotes
+
+  * analyze:
+        Perform dimensional analysis of multiple variables to try to match
+        a target unit.
+
+        analyze [unit] varlist :
+                        here, "unit" is a target unit, which could be [] for
+                        dimensionless quantities
+
+                        varlist is a comma-separated list of variables and
+                        constants, enclosed in brackets {}.
+
+                        analyze tries to match the target units by combining
+                        different powers of the provided variables. The
+                        possible solutions are stored in variables named
+                        "solutionN", where N is a number.
+
+                        A simple example for finding the equation for
+                        potential energy is given below; please check the
+                        example notebooks for more detailed examples.
+
+                        DA > m = 3[kg]
+                        m = 3 [kg]
+                        DA > h =  1[m]
+                        h = 1 [m]
+                        DA > analyze [J] {m,h,_g}
+                        solution0 = m * h * _g = 29.42 [J]
+
+        '''        
     elif t[2] == 'operators'[:len(t[2])]:
         t[0] = '''
   The following operators are supported (a and b are concrete values):
