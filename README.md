@@ -104,3 +104,10 @@ Torque in [lbf ft]: 18.4391 [lbf ft]
 
 For more information, please refer to the notebooks in the `examples` folder. You can also just start DACalc and work your way through the help pages. Type `?` to get started...
 
+Other resources:
+
+- Wikipedia page on [Dimensional Analysis](https://en.wikipedia.org/wiki/Dimensional_analysis)
+
+- Khan Academy video on [Dimensional Academy](https://www.khanacademy.org/math/algebra/x2f8bb11595b61c86:working-units/x2f8bb11595b61c86:rate-conversion/v/dimensional-analysis-units-algebraically)
+
+- Thompson and Taylor: [Guide for the Use of the International System of Units (SI)](https://physics.nist.gov/cuu/pdf/sp811.pdf). NIST Special Edition 811, 2008 Edition. 
