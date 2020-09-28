@@ -11,8 +11,7 @@ import ply.yacc as yacc
 import dacalc.concretenumber as cn
 from dacalc.concretenumber import ConcreteNumber as CN
 from dacalc.unitparser import parse as uparse
-
-
+import dacalc.conversions as conv
 
 
 #######
@@ -31,12 +30,18 @@ univar_func = {
     "ln": cn.ln,
     "log2": cn.log2,
     "log10": cn.log10,
+    "SI_to_Gauss": conv.SI_to_Gauss,
+    "SI_to_ESU": conv.SI_to_ESU,
+    "SI_to_EMU": conv.SI_to_EMU,
 }
 
 bivar_func = {
     "atan2": cn.atan2,
     "log": cn.log,
-    "pow": cn.pow
+    "pow": cn.pow,
+    "Gauss_to_SI": conv.Gauss_to_SI,
+    "ESU_to_SI": conv.ESU_to_SI,
+    "EMU_to_SI": conv.EMU_to_SI,
 }
 
 # start with empty variables
@@ -45,7 +50,7 @@ variables = {}
 # user defined unit names (only used for printing help)
 user_units = []
 
-# solution count for the last analysis command 
+# solution count for the last analysis command
 soln_ctr = 0
 
 
@@ -60,8 +65,10 @@ tokens = (
     'HELP',
     'ASSIGN',
     'USE',
+    'OUTPUT',
     'DEF',
     'LOAD',
+    'DIM',
     'ANALYZE',
     'LPAR',
     'RPAR',
@@ -75,7 +82,6 @@ tokens = (
     'EXP',
     'EXPS',
     'ROOT',
-    'RT',
     'INT',
     'NUMBER',
     'UNIVARFUNC',
@@ -98,7 +104,6 @@ t_ADD =    r'\+'
 t_SUB =    r'-'
 t_MUL =    r'\*'
 t_DIV =    r'/'
-t_RT =     r'\u221a'
 
 
 # variable/constant names and builtin functions
@@ -112,13 +117,18 @@ def t_IDENTIFIER(t):
         t.value = bivar_func[t.value]
     elif t.value == "use":
         t.type = 'USE'
+    elif t.value == "output":
+        t.type = 'OUTPUT'
     elif t.value == "def":
         t.type = "DEF"
     elif t.value == "import":
         t.type = "LOAD"
+    elif t.value == "dim":
+        t.type = "DIM"
     elif t.value == "analyze":
         t.type = "ANALYZE"
     return t
+
 
 # signed integer exponent (i.e. leading '^')
 def t_EXP(t):
@@ -126,25 +136,27 @@ def t_EXP(t):
     t.value = int(t.value[1:])
     return t
 
+
 # signed integer exponent in unicode superscript
 def t_EXPS(t):
-    r'(\u207a|\u207b)?((\u2070|\xb9|\xb2|\xb3|\u2074|\u2075|\u2076|\u2077|\u2078|\u2079)+)'
+    (r'(\u207a|\u207b)?'
+     r'((\u2070|\xb9|\xb2|\xb3|\u2074|\u2075|\u2076|\u2077|\u2078|\u2079)+)')
     t.value = cn.sup_int(t.value)
     return t
 
-# signed integer root (i.e. leading '%')
-def t_ROOT(t):
-    r'\%-?\d+'
-    t.value = int(t.value[1:])
-    return t
 
 def t_NUMBER(t):
-    r'(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?'
-    t.value = float(t.value)
-    if t.value.is_integer():
-        t.type = "INT"
-        t.value = int(t.value)
+    r'(\d+[%\u221a])|((\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?)'
+    if t.value[-1] == '%' or t.value[-1] == u'\u221a':
+        t.type = "ROOT"
+        t.value = int(t.value[:-1])
+    else:
+        t.value = float(t.value)
+        if t.value.is_integer():
+            t.type = "INT"
+            t.value = int(t.value)
     return t
+
 
 # a unit string, bounded by brackets
 def t_UNITS(t):
@@ -152,34 +164,38 @@ def t_UNITS(t):
     t.value = t.value[1:-1]
     return t
 
+
 def t_STRING(t):
     r'"[^"]*"'
     t.value = t.value[1:-1]
     return t
 
+
 def t_comment(t):
     r'\#[^\n]*'
     pass
+
 
 # Define a rule so we can track line numbers
 def t_NEWLINE(t):
     r'[;\n]+'
     t.lexer.lineno += len(t.value)
     return t
-    
+
+
 # A string containing ignored characters (spaces and tabs)
-t_ignore  = ' \t'
+t_ignore = ' \t'
+
 
 # Error handling rule
 def t_error(t):
-    print("Illegal character:\n  \"... "+t.value[0:10]+"...\"\n       ^",
-          file = sys.stderr)
+    print("Illegal character:\n  \"... " + t.value[0:10] + "...\"\n       ^",
+          file=sys.stderr)
     t.lexer.skip(1)
 
-    
 
 # Build the lexer
-da_lexer = lex.lex(optimize=1,lextab='dacalc.dalextab')
+da_lexer = lex.lex(optimize=1, lextab='dacalc.dalextab')
 
 
 def dbg_lexer(s):
@@ -188,20 +204,19 @@ def dbg_lexer(s):
         print(repr(tok.type), repr(tok.value))
 
 
-
-
 ##########
 # parser
 ##########
 
 
 precedence = (
-    ('left','ADD','SUB'),
-    ('left','MUL','DIV'),
-    ('right','UMINUS'),
-    ('left','EXP','ROOT'),
-    ('right','UNITS')
+    ('left', 'ADD', 'SUB'),
+    ('left', 'MUL', 'DIV'),
+    ('right', 'UMINUS'),
+    ('left', 'EXP', 'EXPS', 'ROOT'),
+    ('right', 'UNITS')
 )
+
 
 def p_lineseq(t):
     '''
@@ -217,17 +232,22 @@ def p_oneline(t):
     '''
     line : typestatement
          | usestatement
+         | outputstatement
          | unitdef
          | helpline
          | loadstatement
+         | stringstatement
+         | dimstatement
          | analyzestatement
          | empty
     '''
     t[0] = t[1]
 
+
 def p_empty(t):
     'empty :'
     pass
+
 
 def p_helpline(t):
     '''
@@ -237,12 +257,12 @@ def p_helpline(t):
     if len(t) == 2:
         t[0] =  '''
   DA calculator -- a calculator for dimensional analysis
-  
+
   Dimensional analysis means calculating with concrete values, i.e. values
   that have units attached, and thus have physical meanings. For details, try
-        
+
         ? <topic>
-  
+
   where <topic> is one of (any unique prefix will do):
 
         basics:       basic calculations
@@ -275,13 +295,13 @@ def p_helpline(t):
         T = 12.7 [J]
         DA > [lbf in] T
         112.404 [lbf in]
-        DA > 
-        
+        DA >
+
    Refer to the 'commands' help page for more details for more options
    on custom units and result display.
 
    Of course dacalc also supports all the usual math library functions
-   (see help page for 'functions'). 
+   (see help page for 'functions').
 
         DA > r = 5[cm]
         r = 50 [mm]
@@ -289,31 +309,35 @@ def p_helpline(t):
         alpha = 1.0472 [rad]
         DA > l = r*sin(alpha)
         l = 43.3013 [mm]
-        DA > 
+        DA >
         DA > beta = atan2(3[mm],5[cm])
         beta = 59.9282 [mrad]
         DA > [deg] beta
-        3.43363 [deg]        
+        3.43363 [deg]
         '''
     elif t[2] == 'commands'[:len(t[2])]:
         t[0] = '''
   Apart from arithmetic expressions, variable assignments, and unit conversions
   (see help page 'basics') several special commands are supported. They are:
 
-        use :      select output units and other choices for output formatting
-        
+        use :      select output units
+
+        output :   formatting options for output
+
         def :      define a new unit
 
+        dim :      show the dimensions of an expression
+
         import :   load a dacalc script
-        
+
         analyze :  perform dimensional analysis on a set of variables
 
   The specifics of the individual commands are as follows:
 
   * use:
         The use command controls the output of values. It has three different
-        variants: 
-        
+        variants:
+
         use <system> :  choose a specific unit system for outputing all
                         quantities. Supported systems are SI and US, as
                         well as SI_base and US_base. The latter two only
@@ -333,7 +357,18 @@ def p_helpline(t):
                         DA > 2[kg] * _g * 1[m]
                         19.6133 [N m]
 
-        use <digits> :  where digits is a non-negative integer. This selects
+  * output:
+        Various options for output formatting
+
+        output plain|unicode|html : text format for the output.
+                        "plain" uses plain text, with exponents shown as a^-2.
+                        "unicode" uses unicode superscript to format exponents
+                        "html" uses HTML superscripts
+                        while "plain" and "unicode" produces output that can
+                        be copy/pasted and used as input, this is not the
+                        case for "html"
+
+        output <num> :  where num is a non-negative integer. This selects
                         the number of displayed digits in numerical values.
 
   * def:
@@ -348,7 +383,12 @@ def p_helpline(t):
                         New unit ly = 9.46073e+15 [m]
                         DA > .2[ly]
                         1.89215e+15 [m]
-  
+
+  * dim:
+        Display the dimensions of a quantity
+
+        dim expr:       where expr is any expression
+
   * import:
         Imports a dacalc script. All variables, units and settings made in
         the script will become available. Syntax:
@@ -383,28 +423,28 @@ def p_helpline(t):
                         DA > analyze [J] {m,h,_g}
                         solution0 = m * h * _g = 29.42 [J]
 
-        '''        
+        '''
     elif t[2] == 'operators'[:len(t[2])]:
         t[0] = '''
   The following operators are supported (a and b are concrete values):
-        
+
         a + b:        addition
         a - b:        subtraction
         a * b:        multiplication
         a / b:        division
         - a:          negation
-        a ^ i:        i-th power of a (i is an int, see below)
-        a % i:        i-th root of a
-  
+        a^i:          i-th power of a (i is an int, see below)
+        i%a:          i-th root of a
+
   In the last two operators, <i> refers to an integer constant, i.e. this
   cannot be a calculated value but has to be specified directly as a^-2,
   b%2 etc. Alternatively, it is  possible to directly enter unicode
   superscript and root characters, e.g.
 
-        a\u207b\xb2           is identical to a ^ -2, and
-        \xb3\u221aa           is identical to a % 3
+        a\u207b\xb2           is identical to a^-2, and
+        3\u221aa            is identical to 3%a
 
-  
+
   The order of precedence of these operations matches standard math
   conventions, i.e. the input
 
@@ -417,17 +457,18 @@ def p_helpline(t):
         '''
     elif t[2] == 'func'[:len(t[2])]:
         t[0] = "  The following functions are supported:\n"
-        for n,f in univar_func.items():
+        for n, f in univar_func.items():
             t[0] += '\t' + n + "(a)" + '\n'
-        for n,f in bivar_func.items():
-            t[0] += '\t' + n + "(a,b)" + '\n'
+        for n, f in bivar_func.items():
+            t[0] += '\t' + n + "(a, b)" + '\n'
         t[0] += '\n'
     elif t[2] == 'functions'[:len(t[2])]:
         t[0] = "  The following functions are supported:\n"
-        for n,f in univar_func.items():
-            t[0] += "\n  " + n + "(.):\n" + f.__doc__ + '\n' + '-'*75 + '\n'
-        for n,f in bivar_func.items():
-            t[0] += "\n  " + n + "(.,.):\n" + f.__doc__ + '\n' + '-'*75 + '\n'
+        for n, f in univar_func.items():
+            t[0] += "\n  " + n + "(.):\n" + f.__doc__ + '\n' + '-' * 75 + '\n'
+        for n, f in bivar_func.items():
+            t[0] += "\n  " + n + "(.,.):\n" + f.__doc__ + '\n' \
+                + '-' * 75 + '\n'
         t[0] += '\n'
     elif t[2] == 'constants'[:len(t[2])]:
         t[0] = '''
@@ -436,50 +477,50 @@ def p_helpline(t):
   constant 'pi' can be accessed as '_pi'.
 
   List of constants:
-  
- '''
+
+        '''
         ctr = 0
         for c in cn.const:
-            t[0] += "   "+"{:<5} : {:<15}".format(c[0],c[2])
-            ctr+= 1
-            if ctr%3 == 0:
-                t[0] += '\n ' # indentation fudging
+            t[0] += "   {:<5} : {:<15}".format(c[0], c[2])
+            ctr += 1
+            if ctr % 3 == 0:
+                t[0] += '\n '  # indentation fudging
         t[0] += '\n'
     elif t[2] == 'units'[:len(t[2])]:
         t[0] = "  SI units:\n"
         ctr = 0
         for u in cn.si_u:
-            t[0] += "    {:<16}".format(u[2]+" ["+u[0]+"],")
-            ctr+= 1
-            if ctr%4 == 0:
+            t[0] += "    {:<16}".format(u[2] + " [" + u[0] + "],")
+            ctr += 1
+            if ctr % 4 == 0:
                 t[0] += '\n'
         t[0] += "\n\n  SI prefixes (can be used with any SI unit):\n"
         ctr = 0
         for p in CN.SI_PREFIXES.items():
             t[0] += "    %s: %1.0e" % p
-            ctr+= 1
-            if ctr%5 == 0:
+            ctr += 1
+            if ctr % 5 == 0:
                 t[0] += '\n'
         t[0] += "\n  US units (not that some of these differ from UK units):\n"
         ctr = 0
         for u in cn.us_u:
-            t[0] += "    {:<20}".format(u[2]+" ["+u[0]+"],")
-            ctr+= 1
-            if ctr%3 == 0:
+            t[0] += "    {:<20}".format(u[2] + " [" + u[0] + "],")
+            ctr += 1
+            if ctr % 3 == 0:
                 t[0] += '\n'
         t[0] += "\n\n  Other units (often outdated):\n"
         ctr = 0
         for u in cn.misc_u:
             t[0] += "    {:<20}".format(u[2] + " [" + u[0] + "],")
-            ctr+= 1
-            if ctr%3 == 0:
+            ctr += 1
+            if ctr % 3 == 0:
                 t[0] += '\n'
         t[0] += "\n\n  User defined units:\n"
         ctr = 0
         for u in user_units:
             t[0] += "    {:<10}".format(u)
-            ctr+= 1
-            if ctr%5 == 0:
+            ctr += 1
+            if ctr % 5 == 0:
                 t[0] += '\n'
         t[0] += '\n'
     elif t[2] == "vars"[:len(t[2])]:
@@ -487,54 +528,69 @@ def p_helpline(t):
   Variables are user-specified quantities that can be defined and changed.
   The names of variables must start with a letter (unlike constants, which
   start with an underscore '_').
-  
+
   Currently defined variables and their values:
 
 '''
-        for n,v in variables.items():
+        for n, v in variables.items():
             t[0] += '\t' + ' ' + n + ' :\t' + str(v) + '\n'
         t[0] += '\n'
     else:
-        print("Unknown help topic",file = sys.stderr)
+        print("Unknown help topic", file=sys.stderr)
         t[0] = None
 
 
 def p_use_units(t):
     'usestatement : USE UNITS'
     newu = uparse(t[2])
-    CN.use(newu,t[2])
-    print("Using ["+t[2]+"]")
+    CN.use(newu, t[2])
+    print("Using [" + t[2] + "]")
 
-    
+
 def p_use_system(t):
     'usestatement : USE IDENTIFIER'
     CN.use_system(t[2])
-    print("Using",t[2],"system")
-   
-    
+    print("Using", t[2], "system")
+
+
 def p_use_precision(t):
     'usestatement : USE INT'
     CN.set_precision(t[2])
-    print("Using precision of",t[2],"digits")
+    print("Using precision of", t[2], "digits")
 
-    
+
+def p_output_format(t):
+    '''
+    outputstatement : OUTPUT IDENTIFIER
+                    | OUTPUT INT
+    '''
+    if type(t[2]) == int:
+        CN.set_precision(t[2])
+        print("Using precision of", t[2], "digits")
+    elif type(t[2]) == str:
+        CN.output_mode = t[2]
+        print("New output mode:", t[2])
+    else:
+        print("Syntax error at", t[2], file=sys.stderr)
+
+
 def p_def(t):
     'unitdef : DEF IDENTIFIER expr'
     if t[2] in user_units:
         # just overwriting a previous user-defined unit
-        cn.add_unit_to_dict(t[2],t[3])
-        print("Redefined unit",t[2],'=',t[3])
+        cn.add_unit_to_dict(t[2], t[3])
+        print("Redefined unit", t[2], '=', t[3])
     elif t[2] in CN.units.keys():
         # if the unit exists but is not user-defined then this
         # is an attempt to redefine a built-in unit
-        print("Cannot redefine built-in unit",file = sys.stderr)
+        print("Cannot redefine built-in unit", file=sys.stderr)
     else:
         # new unit
-        cn.add_unit_to_dict(t[2],t[3])
+        cn.add_unit_to_dict(t[2], t[3])
         user_units.append(t[2])
-        print("New unit",t[2],'=',t[3])
+        print("New unit", t[2], '=', t[3])
 
-        
+
 def p_load(t):
     'loadstatement : LOAD STRING'
     f = open(t[2])
@@ -543,7 +599,13 @@ def p_load(t):
     new_lexer = da_lexer.clone()
     with io.StringIO() as buf, redirect_stdout(buf):
         # only error messages will be reported
-        da_parser.parse(script,lexer=new_lexer)
+        da_parser.parse(script, lexer=new_lexer)
+
+
+def p_string(t):
+    'stringstatement : STRING'
+    # substitute string literals before output
+    print(t[1].encode('raw_unicode_escape').decode('unicode_escape'))
 
 
 def var_lookup(name):
@@ -553,13 +615,25 @@ def var_lookup(name):
         try:
             result = CN.const[name[1:]]
         except LookupError:
-            print("Unknown constant '%s'" % name,file = sys.stderr)
+            print("Unknown constant '%s'" % name, file=sys.stderr)
     else:
         try:
             result = variables[name]
         except LookupError:
-            print("Unknown variable '%s'" % name,file = sys.stderr)
+            print("Unknown variable '%s'" % name, file=sys.stderr)
     return result
+
+
+def p_dim(t):
+    '''
+    dimstatement : DIM expr
+                 | DIM UNITS
+    '''
+    if type(t[2]) == str:
+        val = uparse(t[2])
+    else:
+        val = t[2]
+    print(val.dimensionstr())
 
 
 def p_analyze(t):
@@ -568,29 +642,29 @@ def p_analyze(t):
 
     target = uparse(t[2])
     val_list = [var_lookup(var) for var in t[4]]
-    solns = CN.analyze(val_list,target)
-    
+    solns = CN.analyze(val_list, target)
+
     # delete old solution variables
-    for i in range(0,soln_ctr):
-        variables.pop("solution"+str(i),None)
+    for i in range(0, soln_ctr):
+        variables.pop("solution" + str(i), None)
     soln_ctr = 0
     for s in solns:
         sol_str = ""
         sol = CN()
-        for name,val in zip(t[4],s):
+        for name, val in zip(t[4], s):
             if val[1] != 0:
                 sol *= val[0]**val[1]
-                sol_str += ' * '+name
-                if val[1]!= 1:
-                    sol_str+= '^'+str(val[1])
-        var_str = "solution"+str(soln_ctr)
+                sol_str += ' * ' + name
+                if val[1] != 1:
+                    sol_str += '^' + str(val[1])
+        var_str = "solution" + str(soln_ctr)
         sol_str = CN.make_super(sol_str)
-        print(var_str+' ='+sol_str[2:]+' = '+sol.__str__(t[2]))
+        print(var_str + ' =' + sol_str[2:] + ' = ' + sol.__str__(t[2]))
         variables[var_str] = sol
-        soln_ctr+= 1
+        soln_ctr += 1
     if len(solns) == 0:
-        print("No solution found for analysis problem",file = sys.stderr)
-        
+        print("No solution found for analysis problem", file=sys.stderr)
+
 
 def p_varlist(t):
     '''
@@ -602,35 +676,35 @@ def p_varlist(t):
     else:
         t[0] = t[1]
         t[0].append(t[3])
-    
-    
+
+
 def p_tstatement_typecast(t):
     'typestatement : UNITS statement'
     t[0] = t[2]
     print(t[2].__str__(t[1]))
 
-    
+
 def p_tstatement_plain(t):
     'typestatement : statement'
     t[0] = t[1]
     print(t[1])
 
-    
+
 def p_statement_assign(t):
     'statement : IDENTIFIER ASSIGN expr'
     t[0] = t[3]
     if t[1][0] == '_':
-        print("Cannot define new constants...",file = sys.stderr)
+        print("Cannot define new constants...", file=sys.stderr)
     else:
-        variables[t[1]] = t[3] # store new / updated variable
-        print(t[1],end=' = ')
+        variables[t[1]] = t[3]  # store new / updated variable
+        print(t[1], end=' = ')
 
-        
+
 def p_statement_expr(t):
     'statement : expr'
     t[0] = t[1]
 
-    
+
 def p_expr_binop(t):
     '''
     expr : expr ADD expr
@@ -638,14 +712,20 @@ def p_expr_binop(t):
     expr : expr MUL expr
     expr : expr DIV expr
     '''
-    if t[2] == '+'  : t[0] = t[1] + t[3]
-    elif t[2] == '-': t[0] = t[1] - t[3]
-    elif t[2] == '*': t[0] = t[1] * t[3]
-    elif t[2] == '/': t[0] = t[1] / t[3]
+    if t[2] == '+':
+        t[0] = t[1] + t[3]
+    elif t[2] == '-':
+        t[0] = t[1] - t[3]
+    elif t[2] == '*':
+        t[0] = t[1] * t[3]
+    elif t[2] == '/':
+        t[0] = t[1] / t[3]
+
 
 def p_expr_unitmul(t):
     'expr : expr UNITS'
     t[0] = t[1] * uparse(t[2])
+
 
 def p_expr_exp(t):
     '''
@@ -654,60 +734,58 @@ def p_expr_exp(t):
     '''
     t[0] = t[1]**t[2]
 
-def p_expr_root(t):
-    'expr : expr ROOT %prec ROOT'
-    t[0] = cn.root(t[1],t[2])
 
-# alternative way to do roots by prefix superscript and root symbol
-def p_expr_root_sup(t):
-    '''
-    expr : EXPS RT expr %prec ROOT
-    '''
-    if len(t) == 4:
-        t[0] = cn.root(t[3],t[1])
-    else:
-        t[0] = cn.root(t[2],2)
-    
+def p_expr_root(t):
+    'expr : ROOT expr %prec ROOT'
+    t[0] = cn.root(t[2], t[1])
+
+
 def p_expr_uminus(t):
     'expr : SUB expr %prec UMINUS'
     t[0] = -t[2]
+
 
 def p_expr_univar(t):
     'expr : UNIVARFUNC LPAR expr RPAR'
     t[0] = t[1](t[3])
 
+
 def p_expr_bivar(t):
     'expr : BIVARFUNC LPAR expr COMMA expr RPAR'
-    t[0] = t[1](t[3],t[5])
-    
+    t[0] = t[1](t[3], t[5])
+
+
 def p_expr_group(t):
     'expr : LPAR expr RPAR'
     t[0] = t[2]
+
 
 def p_expr_const(t):
     '''
     expr : INT
     expr : NUMBER
     '''
-    t[0] = t[1]*CN.u("")
+    t[0] = t[1] * CN(1)
 
 
 def p_expr_var(t):
     'expr : IDENTIFIER'
     t[0] = var_lookup(t[1])
 
-    
+
 def p_error(t):
-    print("Syntax error at '%s'" % t.value,file = sys.stderr)
+    print("Syntax error at '%s'" % t.value, file=sys.stderr)
 
 
-da_parser = yacc.yacc(optimize=1,tabmodule='dacalc.daparsetab')
+da_parser = yacc.yacc(optimize=1, tabmodule='dacalc.daparsetab')
+
 
 def parse(s):
-    return da_parser.parse(s,lexer=da_lexer)
+    return da_parser.parse(s, lexer=da_lexer)
+
 
 def main():
-    import readline
+    import readline   # noqa: F401
 
     print('Welcome to the dimensional analysis calculator!')
     print('Try "?" for help...')
@@ -721,13 +799,12 @@ def main():
             if type(help_msg) == str and help_msg != "":
                 pager(help_msg)
         except TypeError as te:
-            print(te,file = sys.stderr)
+            print(te, file=sys.stderr)
         except Exception as exc:
-            print(exc,file = sys.stderr)
+            print(exc, file=sys.stderr)
 
     print("\nGoodbye...")
 
 
 if __name__ == '__main__':
     main()
-

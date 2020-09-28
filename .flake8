@@ -1,0 +1,18 @@
+
+[flake8]
+
+exclude =
+    # auto-generated files
+    dacalc/unitparsetab.py
+    dacalc/unitlextab.py
+    dacalc/daparsetab.py
+    dacalc/dalextab.py
+
+per-file-ignores =
+    # table-like formatting messes with rules for spaces
+    dacalc/concretenumber.py: E201,E203,E222,E231,E501
+    dacalc/conversions.py: E222
+    dacalc/calculator.py: E222
+    # unused imports
+    dacalc/__init__.py: F401
+    dacalc/__main__.py: F401

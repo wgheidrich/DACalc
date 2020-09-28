@@ -1,8 +1,9 @@
 from pygments.lexer import RegexLexer
-from pygments.token import *
 
+import pygments.token as t
 
 __all__ = ["DALexer"]
+
 
 class DALexer(RegexLexer):
     '''
@@ -16,15 +17,15 @@ class DALexer(RegexLexer):
 
     tokens = {
         'root': [
-            (r'\s+', Text),
-            (r'\#[^\n]*\n', Comment),
-            (r'\[[^\]]*\]', String),
-            (r'"[^"]*"', Generic.Strong),
-            (r'(def|use|import|analyze|\?)', Keyword),
-            (r'(sqrt|sin|cos|tan|asin|acos|atan|atan2|abs|log|ln|log2|log10|pow)', Name.Function),
-            (r'[a-zA-Z_]+', Name.Variable),
-            (r'(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?', Number),
-            (r'[\+\-\*/,=\(\)\{\}\^\%]+', Operator)
+            (r'\s+', t.Text),
+            (r'\#[^\n]*\n', t.Comment),
+            (r'\[[^\]]*\]', t.String),
+            (r'"[^"]*"', t.Generic.Strong),
+            (r'(def|use|output|dim|import|analyze|\?)', t.Keyword),
+            ((r'(sqrt|sin|cos|tan|asin|acos|atan|atan2|'
+              r'abs|log|ln|log2|log10|pow)'), t.Name.Function),
+            (r'[a-zA-Z_]+', t.Name.Variable),
+            (r'(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?', t.Number),
+            (r'[\+\-\*/,=\(\)\{\}\^\%]+', t.Operator)
         ]
     }
-
