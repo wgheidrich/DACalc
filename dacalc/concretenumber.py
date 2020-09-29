@@ -60,8 +60,18 @@ def sup_int(s):
 
 
 ##########
+# Math module to be useed
+#
+# (reassigned this to cmath to use complex number functions)
+##########
+
+cnmath = math
+
+
+##########
 # ConcreteNumber class
 ##########
+
 
 class ConcreteNumber:
 
@@ -77,7 +87,7 @@ class ConcreteNumber:
     #   - angle or solid angle [rad or sr] as pseudo-units
     #
     # NOTE: we use fixed point representation with the LSB representing 0.5
-    #       (this is necessary to represent CGS fractional dimensions)
+    #       (this is necessary to represent CGS half dimensions)
     DIMENSION_LESS = (0, 0, 0, 0, 0, 0, 0, 0)
 
     # dimensions of each SI base unit (and for rad and sr)
@@ -124,7 +134,7 @@ class ConcreteNumber:
         (1e-15, "f"),
         (1e-12, "p"),
         ( 1e-9, "n"),
-        ( 1e-6, "\u03BC"),
+        ( 1e-6, "\u03BC"),  # output is always greek mu
         ( 1e-3, "m"),
         (    1, ""),
         (  1e3, "k"),
@@ -146,11 +156,14 @@ class ConcreteNumber:
     # number formatting string
     format_str = "{:.6g}"
 
+    # complex number formatting string
+    format_str_complex = "({0.real:.6g} {0.imag:+6g}j)"
+
     # text formatting mode ("plain", "unicode", or "html")
     output_mode = "unicode"
 
-    # enable CGS fractional units
-    fractional_units = True
+    # enable CGS half dimensions
+    half_dimensions = False
 
     # whether to use SI prefixes for output of SI units
     # (single units only, not composite ones like [N m])
@@ -217,16 +230,20 @@ class ConcreteNumber:
                 cls.use(u[1], u[0])
         elif sys == "CGS_base":
             # only base units
+            ConcreteNumber.half_dimensions = True
             cls.base_units = unit_systems["cgs"]
         elif sys == "CGS" or sys == "CGS_Gauss":
+            ConcreteNumber.half_dimensions = True
             cls.base_units = unit_systems["cgs"]
             for u in default_cgs_gauss_u:
                 cls.use(u[1], u[0])
         elif sys == "CGS_ESU":
+            ConcreteNumber.half_dimensions = True
             cls.base_units = unit_systems["cgs"]
             for u in default_cgs_esu_u:
                 cls.use(u[1], u[0])
         elif sys == "CGS_EMU":
+            ConcreteNumber.half_dimensions = True
             cls.base_units = unit_systems["cgs"]
             for u in default_cgs_emu_u:
                 cls.use(u[1], u[0])
@@ -245,6 +262,8 @@ class ConcreteNumber:
             None
         '''
         cls.format_str = "{:." + str(prec) + "g}"
+        cls.format_str_complex = \
+            "({0.real:." + str(prec) + "g} {0.imag:+." + str(prec) + "g}j)"
 
     @classmethod
     def make_super(cls, s):
@@ -262,6 +281,10 @@ class ConcreteNumber:
             s = match.group(0)
             return "^" + "".join(str(superscript_ints.get(c, c)) for c in s)
 
+        def codify(match):
+            s = match.group(0)
+            return "".join(str(superscript_chars.get(c, c)) for c in s)
+
         # convert to plain first
         # remove unicode
         s = re.sub(r'(\u207a|\u207b)?((\u2070|\xb9|\xb2|\xb3|\u2074|\u2075|\u2076|\u2077|\u2078|\u2079)+)', plainify, s)
@@ -271,8 +294,8 @@ class ConcreteNumber:
         if cls.output_mode == "html":
             return re.sub(r"\^([+-]?\d+(.5)?)", r"<sup>\1</sup>", s)
         elif (cls.output_mode == "unicode" and
-              not ConcreteNumber.fractional_units):
-            return "".join(superscript_chars.get(c, c) for c in s)
+              not ConcreteNumber.half_dimensions):
+            return re.sub(r"\^([+-]?\d+(.5)?)", codify, s)
         else:
             return s
 
@@ -348,7 +371,7 @@ class ConcreteNumber:
                           8 SI base units  (kg,m,s,A,K,mol,cd,rad),
                         - OR a unit string to be parsed
         '''
-        if type(units) == str:
+        if isinstance(units, str):
             u = dacalc.unitparser.parse(units)
             self.value = val * u.value
             self.units = u.units
@@ -451,7 +474,7 @@ class ConcreteNumber:
             None
 
         Returns:
-            floating point value corresponding to self.value in base units
+            value corresponding to self.value in base units
         '''
         new_u = ConcreteNumber(1)  # start dimensionless
         for i in range(0, 7):
@@ -459,11 +482,11 @@ class ConcreteNumber:
             if ef.is_integer():
                 e = int(ef)
             else:
-                if ConcreteNumber.fractional_units:
+                if ConcreteNumber.half_dimensions:
                     e = ef
                 else:
-                    print("Fractional units detected --",
-                          "please enable fractional unit mode",
+                    print("Fractional dimensions detected --",
+                          "please enable half-dimension mode",
                           file=sys.stderr)
                     raise(TypeError)
             new_u *= ConcreteNumber.base_units[i][1] ** e
@@ -504,9 +527,15 @@ class ConcreteNumber:
             return str(self / du) + ' [' + \
                 ConcreteNumber.make_super(display_units) + ']'
 
+        # shorthand for the correct cormat string
+        if isinstance(self.value, complex):
+            fmt = ConcreteNumber.format_str_complex
+        else:
+            fmt = ConcreteNumber.format_str
+
         # dimensionless variables are just the numerical values
         if self.units == ConcreteNumber.DIMENSION_LESS:
-            return ConcreteNumber.format_str.format(self.value)
+            return fmt.format(self.value)
 
         # for everything else we first check if one of the preferred
         # units matches
@@ -517,18 +546,18 @@ class ConcreteNumber:
                 # calculate the SI prefix
                 (mult, pref) = ConcreteNumber.SI_OUT_PREF[-1]
                 for (m, p) in ConcreteNumber.SI_OUT_PREF:
-                    if converted.value < 900 * m:
+                    if abs(converted.value) < 900 * m:
                         (mult, pref) = (m, p)
                         break
-                return(ConcreteNumber.format_str.format(converted.value / mult)
-                       + " [" + pref + pref_unit[1] + "]")
+                return (fmt.format(converted.value / mult)
+                        + " [" + pref + pref_unit[1] + "]")
             else:
-                return (ConcreteNumber.format_str.format(converted.value)
+                return (fmt.format(converted.value)
                         + " [" + pref_unit[1] + "]")
         except KeyError:
             # if there are no preferred units, we just use the
             # standard unit string conversion
-            return (ConcreteNumber.format_str.format(self.convert_to_base())
+            return (fmt.format(self.convert_to_base())
                     + " [" + self.unitstr() + "]")
 
     def __repr__(self):
@@ -592,7 +621,7 @@ class ConcreteNumber:
         multiplication operator
 
         Parameters:
-            other : a second ConcreteNumber, an int or a float
+            other : a second ConcreteNumber, or int, float, complex
 
         Returns:
             product as a ConcreteNumber
@@ -601,7 +630,7 @@ class ConcreteNumber:
             return ConcreteNumber(self.value * other.value,
                                   tuple(u1 + u2 for (u1, u2) in
                                         zip(self.units, other.units)))
-        elif type(other) == float or type(other) == int:
+        elif isinstance(other, (float, complex, int)):
             return ConcreteNumber(self.value * other, self.units)
         else:
             return NotImplemented
@@ -611,7 +640,7 @@ class ConcreteNumber:
         right-sided multiplication operator
 
         Parameters:
-            other : an int or a float
+            other : an int, float, or complex number
 
         Returns:
             product as a ConcreteNumber
@@ -622,7 +651,7 @@ class ConcreteNumber:
             return ConcreteNumber(self.value * other.value,
                                   tuple(u1 + u2 for (u1, u2) in
                                         zip(self.units, other.units)))
-        elif type(other) == float or type(other) == int:
+        elif isinstance(other, (float, complex, int)):
             return ConcreteNumber(self.value * other, self.units)
         else:
             return NotImplemented
@@ -632,7 +661,7 @@ class ConcreteNumber:
         division operator
 
         Parameters:
-            other : a second ConcreteNumber, an int or a float
+            other : a second ConcreteNumber, or int, float, complex
 
         Returns:
             division as a ConcreteNumber
@@ -641,7 +670,7 @@ class ConcreteNumber:
             return ConcreteNumber(self.value / other.value,
                                   tuple(u1 - u2 for (u1, u2) in
                                         zip(self.units, other.units)))
-        elif type(other) == float or type(other) == int:
+        elif isinstance(other, (float, complex, int)):
             return ConcreteNumber(self.value / other, self.units)
         else:
             return NotImplemented
@@ -656,14 +685,14 @@ class ConcreteNumber:
         Returns:
             product as a ConcreteNumber
         '''
-        if type(other) == float or type(other) == int:
+        if isinstance(other, (float, complex, int)):
             return ConcreteNumber(val=other) / self
         else:
             return NotImplemented
 
     def __pow__(self, exp):
         '''
-        power operator
+        power operator **
 
         Parameters:
             exp : integer exponent
@@ -671,30 +700,173 @@ class ConcreteNumber:
         Returns:
             self ^ exp
         '''
-        err_msg = "Illegal exponent " + str(exp) + " for dimension " + \
-            '[' + ConcreteNumber.dimensionstr(self) + ']'
+        # convert exponent to simplest representation possible:
+        # only dimensionless ConcreteNumbers are supported
+        if isinstance(exp, ConcreteNumber):
+            exp.check_dimensionless()
+            exp = exp.value
+        # check if complex exponent is real-valued and if so convert to float
+        if isinstance(exp, complex) and exp.imag == 0:
+            exp = exp.real
+        # check if float exponent is really an int and if so, convert
+        if isinstance(exp, float) and exp.is_integer():
+            exp = int(exp)
 
-        if type(exp) == int or (type(exp) == float and exp.is_integer()):
-            # integer exponents
-            return ConcreteNumber(self.value**int(exp),
+        if isinstance(exp, int):
+            # integer exponents are always possible
+            return ConcreteNumber(self.value**exp,
                                   tuple(u * exp for u in self.units))
-        elif type(exp) == float:
-            # check that we have exactly half dimensions
-            if not (ConcreteNumber.fractional_units and (exp * 2).is_integer()):
+        elif self.units == ConcreteNumber.DIMENSION_LESS:
+            # if the base is dimensionless, we can apply any scalar exponent
+            return ConcreteNumber(self.value**exp)
+        elif isinstance(exp, float):
+            err_msg = "Illegal exponent " + str(exp) + " for dimension " + \
+                '[' + ConcreteNumber.dimensionstr(self) + ']'
+
+            # finally, we have a true float exponent with a base that
+            # is not dimensionless.
+
+            # we only allow this if the half dimension mode is active,
+            # end even then we only exponent increments of 0.5 (square roots)
+            if not (ConcreteNumber.half_dimensions and (exp * 2).is_integer()):
                 raise(TypeError(err_msg))
             dim_t = tuple(int(u * exp) if (u * exp).is_integer()
                           else u * exp for u in self.units)
-            # even with fractional units enabled, only half dimensions
-            # are allowed, and only for mass and length
-            if type(dim_t[0]) != int or type(dim_t[1]) != int:
+            # even with half dimensions enabled, they are only allowed
+            # for mass and length
+            if not (isinstance(dim_t[0], int) and isinstance(dim_t[1], int)):
                 raise TypeError(err_msg)
             for u in dim_t[2:]:
-                if type(u) != int or u % 2 != 0:
+                if (not isinstance(u, int)) or u % 2 != 0:
                     raise TypeError(err_msg)
 
             return ConcreteNumber(self.value**exp, dim_t)
         else:
             return NotImplemented
+
+
+#
+# complex number stuff for ConcreteNumber
+#
+
+
+def Re(val):
+    '''
+    Real part of a complex ConcreteNumber
+
+    Parameters:
+        - val : a ConcreteNumber
+
+    Returns:
+        Real part as a complex number with the same dimensions as val
+    '''
+    if isinstance(val,ConcreteNumber):
+        if isinstance(val.value, complex):
+            return ConcreteNumber(val.value.real, val.units)
+        else:
+            return val
+    else:
+        return NotImplemented
+
+
+def Im(val):
+    '''
+    Imaginary part of a complex ConcreteNumber
+
+    Parameters:
+        - val : a ConcreteNumber
+
+    Returns:
+        Imaginary part as a complex number with the same dimensions as val
+    '''
+    if isinstance(val,ConcreteNumber):
+        if isinstance(val.value, complex):
+            return ConcreteNumber(val.value.imag, val.units)
+        else:
+            return ConcreteNumber(0.0, val.units)
+    else:
+        return NotImplemented
+
+
+def conj(val):
+    '''
+    Complex Conjugate of a ConcreteNumber
+
+    Parameters:
+        - val : a ConcreteNumber
+
+    Returns:
+        Complex conjugate with the same dimensions as val
+    '''
+    if isinstance(val, ConcreteNumber):
+        if isinstance(val.value, complex):
+            return ConcreteNumber(val.value.conjugate(), val.units)
+        else:
+            return ConcreteNumber(val.value, val.units)
+    else:
+        return NotImplemented
+
+
+def phase(val):
+    '''
+    Phase angle of a complex ConcreteNumber
+
+    Parameters:
+        - val : a ConcreteNumber
+
+    Returns:
+        Phase in radians (the dimensions of val are dropped!)
+    '''
+    if isinstance(val,ConcreteNumber):
+        if isinstance(val.value, complex):
+            try:
+                return ConcreteNumber(cnmath.phase(val.value),"rad")
+            except AttributeError:
+                raise(NameError("phase() not available in real-valued mode --"
+                                "switch to complex mode"))
+        else:
+            return ConcreteNumber(0.0,"rad")
+    else:
+        return NotImplemented
+
+
+def rect(r,phi):
+    '''
+    Complex number from polar coordinates
+
+    Parameters:
+        - r :   radius / absolute value as a real-valued ConcreteNumber
+
+        - phi : angle in radians as a float or a
+                real-valued ConcreteNumber with units of [rad]
+
+    Returns:
+        Complex ConcreteNumber with the same units as r
+    '''
+    if isinstance(phi, ConcreteNumber):
+        phi.check_dimensionless()
+        phi = phi.value
+    if isinstance(phi, complex):
+        if phi.imag == 0:
+            phi = phi.real
+        else:
+            raise(TypeError("radius must be real-valued."))
+
+    units = ConcreteNumber.DIMENSION_LESS
+    if isinstance(r, ConcreteNumber):
+        units = r.units
+        r = r.value
+    if isinstance(r, complex):
+        if r.imag == 0:
+            r = r.real
+        else:
+            raise(TypeError("angle must be real-valued."))
+
+    try:
+        return ConcreteNumber(cnmath.rect(r, phi), units)
+    except AttributeError:
+        raise(NameError("rect() not available in real-valued mode --"
+                        "switch to complex mode"))
 
 
 #
@@ -714,25 +886,43 @@ def root(val, exp):
     '''
     err_msg = "Cannot take the " + str(exp) + "-root of [" \
         + str(val.unitstr()) + "]"
-    if type(exp) == int:
+
+    # convert exponent to simplest representation possible:
+    # only dimensionless ConcreteNumbers are supported
+    if isinstance(exp, ConcreteNumber):
+        exp.check_dimensionless()
+        exp = exp.value
+    # check if complex exponent is real-valued and if so convert to float
+    if isinstance(exp, complex) and exp.imag == 0:
+        exp = exp.real
+    # check if float exponent is really an int and if so, convert
+    if isinstance(exp, float) and exp.is_integer():
+        exp = int(exp)
+
+    if isinstance(exp, int):
         # tentative dimensions of result, subject to sanity tests
         dim_t = tuple(int(u / exp) for u in val.units)
 
-        if ConcreteNumber.fractional_units:
-            # even with fractional units enabled, only half dimensions
-            # are allowed, and only for mass and length
-            if type(dim_t[0]) != int or type(dim_t[1]) != int:
+        if ConcreteNumber.half_dimensions:
+            # even with half dimensions enabled, they are only allowed
+            # for mass and length
+            if not (isinstance(dim_t[0], int) and isinstance(dim_t[1], int)):
                 raise TypeError(err_msg)
             for u in dim_t[2:]:
                 if u % 2 != 0:
                     raise TypeError(err_msg)
         else:
-            # no fractional units -> all result must be even in fixed point
+            # no half dimensions -> all result must be even in fixed point
             for u in dim_t:
-                if type(u) != int or u % 2 != 0:
+                if (not isinstance(u, int)) or u % 2 != 0:
                     raise TypeError(err_msg)
-        return ConcreteNumber(math.pow(val.value, 1.0 / exp), dim_t)
+        return ConcreteNumber(val.value**(1.0 / exp), dim_t)
+
+    if isinstance(exp, (float, complex, ConcreteNumber)):
+        # unsuccessful conversion to integer
+        raise TypeError(err_msg)
     else:
+        # completely unsupported data type
         return NotImplemented
 
 
@@ -760,7 +950,7 @@ def sin(angle):
         the sine of <angle> in units of []
     '''
     angle.check_dimensionless()
-    val = math.sin(angle.value)
+    val = cnmath.sin(angle.value)
     if angle.units == ConcreteNumber.SR:  # steradians become radians
         return ConcreteNumber(val, ConcreteNumber.RAD)
     else:  # everything else becomes dimensionless
@@ -778,7 +968,7 @@ def cos(angle):
         the cosine of <angle> in units of []
     '''
     angle.check_dimensionless()
-    val = math.cos(angle.value)
+    val = cnmath.cos(angle.value)
     if angle.units == ConcreteNumber.SR:  # steradians become radians
         return ConcreteNumber(val, ConcreteNumber.RAD)
     else:  # everything else becomes dimensionless
@@ -796,7 +986,7 @@ def tan(angle):
         the tangens of <angle> in units of []
     '''
     angle.check_dimensionless()
-    val = math.tan(angle.value)
+    val = cnmath.tan(angle.value)
     if angle.units == ConcreteNumber.SR:  # steradians become radians
         return ConcreteNumber(val, ConcreteNumber.RAD)
     else:  # everything else becomes dimensionless
@@ -814,7 +1004,7 @@ def asin(val):
         the arc sine of <val> in units of [rad]
     '''
     val.check_dimensionless()
-    angle = math.asin(val.value)
+    angle = cnmath.asin(val.value)
     if val.units == ConcreteNumber.RAD:  # radians become steradians
         return ConcreteNumber(angle, ConcreteNumber.SR)
     else:  # everything else becomes radians
@@ -832,7 +1022,7 @@ def acos(val):
         the arc cosine of <val> in units of [rad]
     '''
     val.check_dimensionless()
-    angle = math.acos(val.value)
+    angle = cnmath.acos(val.value)
     if val.units == ConcreteNumber.RAD:  # radians become steradians
         return ConcreteNumber(angle, ConcreteNumber.SR)
     else:  # everything else becomes radians
@@ -850,7 +1040,7 @@ def atan(val):
         the arc tangens of <val> in units of [rad]
     '''
     val.check_dimensionless()
-    angle = math.atan(val.value)
+    angle = cnmath.atan(val.value)
     if val.units == ConcreteNumber.RAD:  # radians become steradians
         return ConcreteNumber(angle, ConcreteNumber.SR)
     else:  # everything else becomes radians
@@ -869,7 +1059,13 @@ def atan2(val1, val2):
         the arc tangens of <val1>/<val2> in units of [rad]
     '''
     val1.check_dim_match(val2, warnrad=False)
-    angle = math.atan2(val1.value, val2.value)
+    if hasattr(cnmath, "atan2"):
+        # math library has an atan2 function
+        angle = cnmath.atan2(val1.value, val2.value)
+    else:
+        # for complex numbers, we just revert to plain atan
+        # !!! may be better to do something more elaborate here in the future
+        angle = atan(val1 / val2)
     if val1.units == ConcreteNumber.RAD:  # radians become steradians
         return ConcreteNumber(angle, ConcreteNumber.SR)
     else:  # everything else becomes radians
@@ -886,7 +1082,20 @@ def fabs(val):
     Returns:
         the absolute value of <val>, with the same units as <val>
     '''
-    return ConcreteNumber(val=math.fabs(val.value), unit_tuple=val.units)
+    return ConcreteNumber(abs(val.value), val.units)
+
+
+def exp(exponent):
+    '''
+    Exponential function
+
+    Parameters:
+        - exponent : the exponent (scalar or dimensionless ConcreteNumber)
+
+    Returns:
+        e ^ exponent
+    '''
+    return math.e ** exponent
 
 
 def log(val, base):
@@ -895,17 +1104,17 @@ def log(val, base):
 
     Parameters:
         val:    a scalar value (units of [])
-        base:   a float, int, or scalar value (units of [])
+        base:   a float, complex, int, or dimensionless value (units of [])
 
     Returns:
         the logarithm base <base> of <val>
     '''
     val.check_dimensionless()
-    if type(base) == float or type(base) == int:
+    if isinstance(base, (float, complex, int)):
         base.check_dimensionless()
-        return ConcreteNumber(val=math.log(val.value, base))
+        return ConcreteNumber(val=cnmath.log(val.value, base))
     else:
-        return ConcreteNumber(val=math.log(val.value, base.value))
+        return ConcreteNumber(val=cnmath.log(val.value, base.value))
 
 
 def ln(val):
@@ -913,13 +1122,13 @@ def ln(val):
     Logarithm base 2
 
     Parameters:
-        val:    a scalar value (units of [])
+        val:    a dimensionless value (units of [])
 
     Returns:
         natural logarithm of <val>
     '''
     val.check_dimensionless()
-    return ConcreteNumber(val=math.log(val.value))
+    return ConcreteNumber(val=cnmath.log(val.value))
 
 
 def log2(val):
@@ -933,7 +1142,7 @@ def log2(val):
         logarithm base 2 of <val>
     '''
     val.check_dimensionless()
-    return ConcreteNumber(val=math.log2(val.value))
+    return ConcreteNumber(val=cnmath.log2(val.value))
 
 
 def log10(val):
@@ -947,7 +1156,7 @@ def log10(val):
         logarithm base 10 of <val>
     '''
     val.check_dimensionless()
-    return ConcreteNumber(val=math.log10(val.value))
+    return ConcreteNumber(val=cnmath.log10(val.value))
 
 
 def pow(val, exp):
@@ -961,23 +1170,19 @@ def pow(val, exp):
     Returns:
         <val> raised to the power of <exp>
     '''
-    if type(exp) == int:
-        return val**exp
-    elif type(exp) == float:
-        if ConcreteNumber.fractional_units and (exp * 2).is_integer():
-            return val**exp
-        else:
-            val.check_dimensionless()
-            return ConcreteNumber(val=math.pow(val.value, exp))
-    elif isinstance(exp, ConcreteNumber):
-        val.check_dimensionless()
-        exp.check_dimensionless()
-        return ConcreteNumber(val=math.pow(val.value, exp.value))
-    else:
-        return NotImplemented
+    # just use the operator
+    return val ** exp
 
 
-# add a single unit to the unit dictionary (check for name clashes)
+#
+#
+# Unit definitions
+#
+#
+
+
+# helper function to add a single unit to the unit dictionary (check
+# for name clashes)
 def add_unit_to_dict(name, newunit):
     if name in ConcreteNumber.units.keys():
         print("Warning: unit", name,
@@ -986,8 +1191,8 @@ def add_unit_to_dict(name, newunit):
     ConcreteNumber.units[name] = newunit
 
 
-# add a new unit both to a unit group list and the global unit
-# dictionary; define all SI prefixes if needed
+# helper functtion to add a new unit both to a unit group list and the
+# global unit dictionary; define all SI prefixes if needed
 def new_unit(unitgroup, unit, si_prefixes=False):
     unitgroup.append(unit)
     add_unit_to_dict(unit[0], unit[1])

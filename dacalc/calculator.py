@@ -27,9 +27,14 @@ univar_func = {
     "acos": cn.acos,
     "atan": cn.atan,
     "abs": cn.fabs,
+    "exp": cn.exp,
     "ln": cn.ln,
     "log2": cn.log2,
     "log10": cn.log10,
+    "Re": cn.Re,
+    "Im": cn.Im,
+    "phase": cn.phase,
+    "conj": cn.conj,
     "SI_to_Gauss": conv.SI_to_Gauss,
     "SI_to_ESU": conv.SI_to_ESU,
     "SI_to_EMU": conv.SI_to_EMU,
@@ -39,6 +44,7 @@ bivar_func = {
     "atan2": cn.atan2,
     "log": cn.log,
     "pow": cn.pow,
+    "rect": cn.rect,
     "Gauss_to_SI": conv.Gauss_to_SI,
     "ESU_to_SI": conv.ESU_to_SI,
     "EMU_to_SI": conv.EMU_to_SI,
@@ -52,6 +58,9 @@ user_units = []
 
 # solution count for the last analysis command
 soln_ctr = 0
+
+# whether we are in complex mode
+complex_mode = False
 
 
 #######
@@ -146,10 +155,17 @@ def t_EXPS(t):
 
 
 def t_NUMBER(t):
-    r'(\d+[%\u221a])|((\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?)'
+    r'(\d+[%\u221a])|((\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?)j?'
     if t.value[-1] == '%' or t.value[-1] == u'\u221a':
+        # this is a root prefix, which must be int
         t.type = "ROOT"
         t.value = int(t.value[:-1])
+    elif t.value[-1] == 'j':
+        # this is a complex number
+        if complex_mode:
+            t.value = complex(t.value)
+        else:
+            raise(TypeError("Please enable complex number mode."))
     else:
         t.value = float(t.value)
         if t.value.is_integer():
@@ -335,7 +351,7 @@ def p_helpline(t):
   The specifics of the individual commands are as follows:
 
   * use:
-        The use command controls the output of values. It has three different
+        The use command controls the output of values. It has different
         variants:
 
         use <system> :  choose a specific unit system for outputing all
@@ -356,6 +372,13 @@ def p_helpline(t):
                         Using [N m]
                         DA > 2[kg] * _g * 1[m]
                         19.6133 [N m]
+
+        use complex :   switch from real numbers to complex numbers. This
+                        cannot be undone, except by restarting the calculator.
+
+        use halfdim :   enable half dimensions for length and mass as needed
+                        by CGS unit systems. Once enabled, it cannot be
+                        disabled, except by restarting the calculator.
 
   * output:
         Various options for output formatting
@@ -549,8 +572,18 @@ def p_use_units(t):
 
 def p_use_system(t):
     'usestatement : USE IDENTIFIER'
-    CN.use_system(t[2])
-    print("Using", t[2], "system")
+    if t[2] == "complex":
+        import cmath
+        cn.cnmath = cmath
+        global complex_mode
+        complex_mode = True
+        print("Switching to complex number mode")
+    elif t[2] == "halfdim":
+        CN.half_dimensions = True
+        print("Enabling CGS-style half dimensions for mass and length")
+    else:
+        CN.use_system(t[2])
+        print("Using", t[2], "system")
 
 
 def p_use_precision(t):

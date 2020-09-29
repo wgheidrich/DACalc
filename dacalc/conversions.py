@@ -4,7 +4,14 @@ from dacalc.unitparser import parse as uparse
 import math as m
 import sys
 
+#
+# in order to build conversions for CGS units, we need to switch to
+# half dimension mode. The current mode is resored at the end.
+#
+half_dim = CN.half_dimensions
+CN.half_dimensions = True
 
+# some constants
 c = CN.const["c"] * CN(1e-10, "s/cm")
 sq_eps4pi =  cn.sqrt(4 * m.pi * CN.const["eps_0"])
 sq_mu4pi =   cn.sqrt(4 * m.pi * CN.const["mu_0"])
@@ -291,3 +298,9 @@ def EMU_to_SI(cn, target):
         concrete number that is valid in SI units.
     '''
     return toSI(cn, target, "EMU")
+
+
+#
+# restore original half dimension mode
+#
+CN.half_dimensions = half_dim

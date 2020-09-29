@@ -2,12 +2,11 @@
 
 ## Features
 
-- complex number support from MaPa (use complex, use real)
+- free variable support a'la MaPa
 
-- possibly free variable support a'la MaPa
+- redo powers and roots to be more like other operators (incl. unary root)
 
-- possibly redo powers and roots to be more like other operators (unary root)
-
+- script argument for commandlien dacalc
 
 ## Examples
 
@@ -32,7 +31,7 @@
 
   - other examples with numpy arrays, plotting etc.
 
-- Tests
+# Tests
 
   - Python examples (see above)
 
