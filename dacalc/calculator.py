@@ -818,25 +818,37 @@ def parse(s):
 
 
 def main():
-    import readline   # noqa: F401
+    import readline   # noqa: F401 # doesn't look like it's used, but it is!
 
-    print('Welcome to the dimensional analysis calculator!')
-    print('Try "?" for help...')
-    while True:
-        try:
-            s = input('DA > ')
-        except EOFError:
-            break
-        try:
-            help_msg = parse(s)
-            if type(help_msg) == str and help_msg != "":
-                pager(help_msg)
-        except TypeError as te:
-            print(te, file=sys.stderr)
-        except Exception as exc:
-            print(exc, file=sys.stderr)
-
-    print("\nGoodbye...")
+    if len(sys.argv) > 1:
+        # do some more sophisticated argument parsing here in the future
+        if len(sys.argv) == 2:
+            f = open(sys.argv[1], 'r')
+            script = f.read()
+            f.close()
+            parse(script)
+        else:
+            print("Expecting at most 1 commandline argument", file=sys.stderr)
+            exit(1)
+    else:
+        # interactive mode    
+        print('Welcome to the dimensional analysis calculator!')
+        print('Try "?" for help...')
+        while True:
+            try:
+                s = input('DA > ')
+            except EOFError:
+                break
+            try:
+                help_msg = parse(s)
+                if type(help_msg) == str and help_msg != "":
+                    pager(help_msg)
+            except TypeError as te:
+                print(te, file=sys.stderr)
+            except Exception as exc:
+                print(exc, file=sys.stderr)
+                
+        print("\nGoodbye...")
 
 
 if __name__ == '__main__':
