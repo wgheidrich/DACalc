@@ -807,6 +807,12 @@ def p_statement_expr(t):
     'statement : expr'
     t[0] = t[1].eval(variables) \
         if isinstance(t[1], ex.Expression) else t[1]
+    # check for free variables
+    if isinstance(t[0], ex.Expression):
+        for v in t[0].get_undefined():
+            raise NameError("Undefined variable: " + v)
+    
+    
 
 
 def p_expr_binop(t):
@@ -881,12 +887,6 @@ def p_expr_func(t):
     param_vals = [p.eval(variables) if isinstance(p, ex.Expression) else p
                   for p in t[3]]
 
-    # check for free variables
-    for p in param_vals:
-        if isinstance(p, ex.Expression):
-            for v in p.get_undefined():
-                raise NameError("Undefined variable: " + v)
-    
     if t[1] in functions:
         # builtin function
         t[0] = functions[t[1]](*param_vals)
