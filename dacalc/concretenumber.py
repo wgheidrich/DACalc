@@ -248,7 +248,7 @@ class ConcreteNumber:
             for u in default_cgs_emu_u:
                 cls.use(u[1], u[0])
         else:
-            raise TypeError("Unknown unit system", sys)
+            raise ValueError("Unknown unit system", sys)
 
     @classmethod
     def set_precision(cls, prec):
@@ -429,7 +429,7 @@ class ConcreteNumber:
 
     def check_dimensionless(self):
         '''
-        check if the value is dimension-less, raise TypeError if not
+        check if the value is dimension-less, raise ValueError if not
 
         Parameters:
             None
@@ -438,13 +438,13 @@ class ConcreteNumber:
             None
         '''
         if self.units[:-1] != ConcreteNumber.DIMENSION_LESS[:-1]:
-            raise TypeError("Expecting dimensionless value, got ["
-                            + self.unitstr() + "]")
+            raise ValueError("Expecting dimensionless value, got ["
+                             + self.unitstr() + "]")
 
     def check_dim_match(self, other, warnrad=True):
         '''
         check if the units match with the units of another ConcreteNumber
-        raise TypeError if not
+        raise ValueeError if not
 
         Mismatches in radians and steradians do not lead to an exception,
         but possibly a warning message.
@@ -457,8 +457,8 @@ class ConcreteNumber:
             None
         '''
         if self.units[:-1] != other.units[:-1]:
-            raise TypeError("Dimension mismatch between [" + self.unitstr()
-                            + "] and [" + other.unitstr() + "]")
+            raise ValueError("Dimension mismatch between [" + self.unitstr()
+                             + "] and [" + other.unitstr() + "]")
         if warnrad and self.units[-1] != other.units[-1]:
             print("WARNING: radians don't match in [" + self.unitstr()
                   + "] and [" + other.unitstr() + "]",
@@ -485,10 +485,8 @@ class ConcreteNumber:
                 if ConcreteNumber.half_dimensions:
                     e = ef
                 else:
-                    print("Fractional dimensions detected --",
-                          "please enable half-dimension mode",
-                          file=sys.stderr)
-                    raise(TypeError)
+                    raise(ValueError("Fractional dimensions detected --",
+                                     "please enable half-dimension mode"))
             new_u *= ConcreteNumber.base_units[i][1] ** e
         return self.value / new_u.value
 
@@ -729,16 +727,16 @@ class ConcreteNumber:
             # we only allow this if the half dimension mode is active,
             # end even then we only exponent increments of 0.5 (square roots)
             if not (ConcreteNumber.half_dimensions and (exp * 2).is_integer()):
-                raise(TypeError(err_msg))
+                raise(ValueError(err_msg))
             dim_t = tuple(int(u * exp) if (u * exp).is_integer()
                           else u * exp for u in self.units)
             # even with half dimensions enabled, they are only allowed
             # for mass and length
             if not (isinstance(dim_t[0], int) and isinstance(dim_t[1], int)):
-                raise TypeError(err_msg)
+                raise ValueError(err_msg)
             for u in dim_t[2:]:
                 if (not isinstance(u, int)) or u % 2 != 0:
-                    raise TypeError(err_msg)
+                    raise ValueError(err_msg)
 
             return ConcreteNumber(self.value**exp, dim_t)
         else:
@@ -850,7 +848,7 @@ def rect(r,phi):
         if phi.imag == 0:
             phi = phi.real
         else:
-            raise(TypeError("radius must be real-valued."))
+            raise(ValueError("radius must be real-valued."))
 
     units = ConcreteNumber.DIMENSION_LESS
     if isinstance(r, ConcreteNumber):
@@ -860,7 +858,7 @@ def rect(r,phi):
         if r.imag == 0:
             r = r.real
         else:
-            raise(TypeError("angle must be real-valued."))
+            raise(ValueError("angle must be real-valued."))
 
     try:
         return ConcreteNumber(cnmath.rect(r, phi), units)
@@ -887,6 +885,11 @@ def root(val, exp):
     err_msg = "Cannot take the " + str(exp) + "-root of [" \
         + str(val.unitstr()) + "]"
 
+    # need complex number mode to do roots of negative numbers
+    if cnmath == math and (isinstance(val.value, complex)
+                           or val.value < 0):
+        raise(ValueError("math domain error for root"))
+
     # convert exponent to simplest representation possible:
     # only dimensionless ConcreteNumbers are supported
     if isinstance(exp, ConcreteNumber):
@@ -907,20 +910,20 @@ def root(val, exp):
             # even with half dimensions enabled, they are only allowed
             # for mass and length
             if not (isinstance(dim_t[0], int) and isinstance(dim_t[1], int)):
-                raise TypeError(err_msg)
+                raise ValueError(err_msg)
             for u in dim_t[2:]:
                 if u % 2 != 0:
-                    raise TypeError(err_msg)
+                    raise ValueError(err_msg)
         else:
             # no half dimensions -> all result must be even in fixed point
             for u in dim_t:
                 if (not isinstance(u, int)) or u % 2 != 0:
-                    raise TypeError(err_msg)
+                    raise ValueError(err_msg)
         return ConcreteNumber(val.value**(1.0 / exp), dim_t)
 
     if isinstance(exp, (float, complex, ConcreteNumber)):
         # unsuccessful conversion to integer
-        raise TypeError(err_msg)
+        raise ValueError("exponent for root must be an integer")
     else:
         # completely unsupported data type
         return NotImplemented
@@ -977,13 +980,13 @@ def cos(angle):
 
 def tan(angle):
     '''
-    Tangens
+    Tangent
 
     Parameters:
         angle:  the angle (in radians) with units of [] or [rad]
 
     Returns:
-        the tangens of <angle> in units of []
+        the tangent of <angle> in units of []
     '''
     angle.check_dimensionless()
     val = cnmath.tan(angle.value)
@@ -1031,13 +1034,13 @@ def acos(val):
 
 def atan(val):
     '''
-    Arc Tangens
+    Arc Tangent
 
     Parameters:
         val:    a scalar value (units of [])
 
     Returns:
-        the arc tangens of <val> in units of [rad]
+        the arc tangent of <val> in units of [rad]
     '''
     val.check_dimensionless()
     angle = cnmath.atan(val.value)
@@ -1049,14 +1052,14 @@ def atan(val):
 
 def atan2(val1, val2):
     '''
-    Arc Tangens with two arguments
+    Arc Tangent with two arguments
 
     Parameters:
         val1:   a concrete number
         val2:   a concrete number with the same units as <val1>
 
     Returns:
-        the arc tangens of <val1>/<val2> in units of [rad]
+        the arc tangent of <val1>/<val2> in units of [rad]
     '''
     val1.check_dim_match(val2, warnrad=False)
     if hasattr(cnmath, "atan2"):
@@ -1098,37 +1101,24 @@ def exp(exponent):
     return math.e ** exponent
 
 
-def log(val, base):
+def log(val, base=math.e):
     '''
     General logarithm
 
     Parameters:
         val:    a scalar value (units of [])
         base:   a float, complex, int, or dimensionless value (units of [])
+                (default base is <e> for the natural log)
 
     Returns:
         the logarithm base <base> of <val>
     '''
     val.check_dimensionless()
     if isinstance(base, (float, complex, int)):
-        base.check_dimensionless()
         return ConcreteNumber(val=cnmath.log(val.value, base))
     else:
+        base.check_dimensionless()
         return ConcreteNumber(val=cnmath.log(val.value, base.value))
-
-
-def ln(val):
-    '''
-    Logarithm base 2
-
-    Parameters:
-        val:    a dimensionless value (units of [])
-
-    Returns:
-        natural logarithm of <val>
-    '''
-    val.check_dimensionless()
-    return ConcreteNumber(val=cnmath.log(val.value))
 
 
 def log2(val):
@@ -1224,7 +1214,7 @@ new_unit(si_u,("A",   ConcreteNumber(1,ConcreteNumber.A),     "Ampere"), True)
 new_unit(si_u,("K",   ConcreteNumber(1,ConcreteNumber.K),     "Kelvin"), True)
 new_unit(si_u,("mol", ConcreteNumber(1,ConcreteNumber.MOL),   "Mole"), True)
 new_unit(si_u,("cd",  ConcreteNumber(1,ConcreteNumber.CD),    "Candela"), True)
-new_unit(si_u,("rad", ConcreteNumber(1,ConcreteNumber.RAD),   "radian"))
+new_unit(si_u,("rad", ConcreteNumber(1,ConcreteNumber.RAD),   "radian"), True)
 
 # SI derived units
 new_unit(si_u,("sr",  ConcreteNumber(1,"rad^2"),      "steradian"))
@@ -1277,6 +1267,7 @@ new_unit(misc_u,("nt",     ConcreteNumber(1,"cd / m^2"),       "nit"))
 new_unit(misc_u,("ct",     ConcreteNumber(.2,"g"),             "carat"))
 new_unit(misc_u,("degC",   ConcreteNumber(1,"K"),              "deg. Celsius"))
 new_unit(misc_u,("degF",   ConcreteNumber(5.0 / 9.0,"K"),     "deg. Farenheit"))
+new_unit(misc_u,("hp",     ConcreteNumber(745.7,"W"),          "horsepower"))
 
 #
 # list of US/imperial units (including some older ones)

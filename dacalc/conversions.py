@@ -6,7 +6,7 @@ import sys
 
 #
 # in order to build conversions for CGS units, we need to switch to
-# half dimension mode. The current mode is resored at the end.
+# half dimension mode. The current mode is restored at the end.
 #
 half_dim = CN.half_dimensions
 CN.half_dimensions = True

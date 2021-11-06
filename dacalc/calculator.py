@@ -12,13 +12,15 @@ import dacalc.concretenumber as cn
 from dacalc.concretenumber import ConcreteNumber as CN
 from dacalc.unitparser import parse as uparse
 import dacalc.conversions as conv
+import dacalc.expression as ex
 
 
 #######
 # data structures
 #######
 
-univar_func = {
+# built-in functions
+functions = {
     "sqrt": cn.sqrt,
     "sin": cn.sin,
     "cos": cn.cos,
@@ -26,32 +28,32 @@ univar_func = {
     "asin": cn.asin,
     "acos": cn.acos,
     "atan": cn.atan,
+    "atan2": cn.atan2,
     "abs": cn.fabs,
+    "pow": cn.pow,
     "exp": cn.exp,
-    "ln": cn.ln,
+    "log": cn.log,
     "log2": cn.log2,
     "log10": cn.log10,
     "Re": cn.Re,
     "Im": cn.Im,
     "phase": cn.phase,
     "conj": cn.conj,
+    "rect": cn.rect,
     "SI_to_Gauss": conv.SI_to_Gauss,
     "SI_to_ESU": conv.SI_to_ESU,
     "SI_to_EMU": conv.SI_to_EMU,
-}
-
-bivar_func = {
-    "atan2": cn.atan2,
-    "log": cn.log,
-    "pow": cn.pow,
-    "rect": cn.rect,
     "Gauss_to_SI": conv.Gauss_to_SI,
     "ESU_to_SI": conv.ESU_to_SI,
     "EMU_to_SI": conv.EMU_to_SI,
 }
 
-# start with empty variables
-variables = {}
+# user defined functions
+# each entry is a tuple of a parameter list and an Expression
+user_functions = {}
+
+# start with just the constants
+variables = {'_'+n: v for n, v in CN.const.items()}
 
 # user defined unit names (only used for printing help)
 user_units = []
@@ -93,8 +95,6 @@ tokens = (
     'ROOT',
     'INT',
     'NUMBER',
-    'UNIVARFUNC',
-    'BIVARFUNC',
     'IDENTIFIER',
     'UNITS',
     'STRING'
@@ -111,20 +111,30 @@ t_RBRAC =  r'\}'
 t_COMMA =  r','
 t_ADD =    r'\+'
 t_SUB =    r'-'
-t_MUL =    r'\*'
 t_DIV =    r'/'
+t_EXP =    r'\^'
+
+
+# this can be either MUL or EXP in Python syntax depending on the number of *s
+def t_MUL(t):
+    r'\*\*?'
+    if len(t.value) > 1:
+        t.type = "EXP"
+        t.value = '^'
+    return t
+
+
+# root is either % or unicode 221a
+def t_ROOT(t):
+    r'[%\u221a]'
+    t.value = '\u221a'  # used for output
+    return t
 
 
 # variable/constant names and builtin functions
 def t_IDENTIFIER(t):
     r'[a-zA-Z_][a-zA-Z0-9_]*'
-    if t.value in univar_func:
-        t.type = "UNIVARFUNC"
-        t.value = univar_func[t.value]
-    elif t.value in bivar_func:
-        t.type = "BIVARFUNC"
-        t.value = bivar_func[t.value]
-    elif t.value == "use":
+    if t.value == "use":
         t.type = 'USE'
     elif t.value == "output":
         t.type = 'OUTPUT'
@@ -139,13 +149,6 @@ def t_IDENTIFIER(t):
     return t
 
 
-# signed integer exponent (i.e. leading '^')
-def t_EXP(t):
-    r'\^[+-]?\d+'
-    t.value = int(t.value[1:])
-    return t
-
-
 # signed integer exponent in unicode superscript
 def t_EXPS(t):
     (r'(\u207a|\u207b)?'
@@ -155,12 +158,8 @@ def t_EXPS(t):
 
 
 def t_NUMBER(t):
-    r'(\d+[%\u221a])|((\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?)j?'
-    if t.value[-1] == '%' or t.value[-1] == u'\u221a':
-        # this is a root prefix, which must be int
-        t.type = "ROOT"
-        t.value = int(t.value[:-1])
-    elif t.value[-1] == 'j':
+    r'((\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?)j?'
+    if t.value[-1] == 'j':
         # this is a complex number
         if complex_mode:
             t.value = complex(t.value)
@@ -230,6 +229,7 @@ precedence = (
     ('left', 'MUL', 'DIV'),
     ('right', 'UMINUS'),
     ('left', 'EXP', 'EXPS', 'ROOT'),
+    ('right', 'UROOT'),
     ('right', 'UNITS')
 )
 
@@ -255,9 +255,12 @@ def p_oneline(t):
          | stringstatement
          | dimstatement
          | analyzestatement
+         | newfunc
          | empty
     '''
-    t[0] = t[1]
+    if t[1] is not None:
+        variables['_'] = t[1]
+        t[0] = t[1]
 
 
 def p_empty(t):
@@ -456,17 +459,25 @@ def p_helpline(t):
         a * b:        multiplication
         a / b:        division
         - a:          negation
-        a^i:          i-th power of a (i is an int, see below)
-        i%a:          i-th root of a
+        a ^ e:        e-th power of a (see below for valid values of e)
+        i \u221a a:        i-th root of a (i is an integer)
+        \u221a a:          square root of a
 
-  In the last two operators, <i> refers to an integer constant, i.e. this
-  cannot be a calculated value but has to be specified directly as a^-2,
-  b%2 etc. Alternatively, it is  possible to directly enter unicode
-  superscript and root characters, e.g.
+  The power and root operators also have alternative syntax variants:
 
-        a\u207b\xb2           is identical to a^-2, and
-        3\u221aa            is identical to 3%a
+        a\u207b\xb2           (unicode superscript) is identical to a^-2
+        a**-2         is also identical to a^-2 (Python syntax for powers)
+        3%a           is identical to 3\u221aa
 
+  Note that the unicode superscript syntax is really only available for
+  integer constants since there is no unicode symbol for superscript
+  decimal points. Also note that all power and root operations are only
+  valid if they produce integer dimensions. This means that floating point
+  exponents are only available for dimensionless quantities. So for example,
+
+        2^.4          is valid, as is
+        3\u221a1[L]        since the cube root of a volume is a length, but
+        2[km]^.4      is not valid since length^.4 is physically ill-defined.
 
   The order of precedence of these operations matches standard math
   conventions, i.e. the input
@@ -477,21 +488,24 @@ def p_helpline(t):
 
         a + (((-b) / c) * (d^2))
 
+  The unit operator [.] has higher priority than any other operator.
+
+  Note that the power operator has a higher priority than the unary minus,
+  i.e. -2^2 is equivalent to -(2^2) instead of (-2)^2. This choice was made
+  in order to be compatible with Python expressions.
+
+  Also note the interaction between the power and root operators: \u221a-2^2
+  gets evaluated as \u221a(-(2^2)), which is the complex number (0+2j).
         '''
     elif t[2] == 'func'[:len(t[2])]:
         t[0] = "  The following functions are supported:\n"
-        for n, f in univar_func.items():
-            t[0] += '\t' + n + "(a)" + '\n'
-        for n, f in bivar_func.items():
-            t[0] += '\t' + n + "(a, b)" + '\n'
+        for n, f in functions.items():
+            t[0] += '\t' + n + "()" + '\n'
         t[0] += '\n'
     elif t[2] == 'functions'[:len(t[2])]:
         t[0] = "  The following functions are supported:\n"
-        for n, f in univar_func.items():
-            t[0] += "\n  " + n + "(.):\n" + f.__doc__ + '\n' + '-' * 75 + '\n'
-        for n, f in bivar_func.items():
-            t[0] += "\n  " + n + "(.,.):\n" + f.__doc__ + '\n' \
-                + '-' * 75 + '\n'
+        for n, f in functions.items():
+            t[0] += "\n  " + n + "():\n" + f.__doc__ + '\n' + '-' * 75 + '\n'
         t[0] += '\n'
     elif t[2] == 'constants'[:len(t[2])]:
         t[0] = '''
@@ -501,14 +515,28 @@ def p_helpline(t):
 
   List of constants:
 
-        '''
+  '''
         ctr = 0
         for c in cn.const:
-            t[0] += "   {:<5} : {:<15}".format(c[0], c[2])
+            t[0] += "  {:<5} : {:<15}".format(c[0], c[2])
             ctr += 1
             if ctr % 3 == 0:
-                t[0] += '\n '  # indentation fudging
-        t[0] += '\n'
+                t[0] += '\n  '
+        t[0] += '''
+
+  Also, a single '_' refers to the value of the last expression, e.g.
+
+    DA > 2[kg] * _g
+    19.6133 [N]
+
+    DA > [lbf] _
+    4.40925 [lbf]
+
+  Statements that may produce multiple solutions (e.g. the 'analyze' statement)
+  define constants named '_0', '_1', and so forth for their results. These
+  'constants' are defined only until the next such statement overwrites them.
+
+  '''
     elif t[2] == 'units'[:len(t[2])]:
         t[0] = "  SI units:\n"
         ctr = 0
@@ -609,19 +637,26 @@ def p_output_format(t):
 
 def p_def(t):
     'unitdef : DEF IDENTIFIER expr'
+    # evaluate expressions with variables and check that all variables
+    # are defined
+    val = t[3].eval(variables) if isinstance(t[3], ex.Expression) else t[3]
+    if isinstance(val, ex.Expression):
+        raise(NameError("def statement has undefined variable(s):\n\t"
+                        + val.get_undefined().keys()))
+
     if t[2] in user_units:
         # just overwriting a previous user-defined unit
-        cn.add_unit_to_dict(t[2], t[3])
-        print("Redefined unit", t[2], '=', t[3])
+        cn.add_unit_to_dict(t[2], val)
+        print("Redefined unit", t[2], '=', val)
     elif t[2] in CN.units.keys():
         # if the unit exists but is not user-defined then this
         # is an attempt to redefine a built-in unit
         print("Cannot redefine built-in unit", file=sys.stderr)
     else:
         # new unit
-        cn.add_unit_to_dict(t[2], t[3])
+        cn.add_unit_to_dict(t[2], val)
         user_units.append(t[2])
-        print("New unit", t[2], '=', t[3])
+        print("New unit", t[2], '=', val)
 
 
 def p_load(t):
@@ -641,22 +676,6 @@ def p_string(t):
     print(t[1].encode('raw_unicode_escape').decode('unicode_escape'))
 
 
-def var_lookup(name):
-    'look up the value of a variable or constant'
-    result = 0
-    if name[0] == '_':
-        try:
-            result = CN.const[name[1:]]
-        except LookupError:
-            print("Unknown constant '%s'" % name, file=sys.stderr)
-    else:
-        try:
-            result = variables[name]
-        except LookupError:
-            print("Unknown variable '%s'" % name, file=sys.stderr)
-    return result
-
-
 def p_dim(t):
     '''
     dimstatement : DIM expr
@@ -665,32 +684,52 @@ def p_dim(t):
     if type(t[2]) == str:
         val = uparse(t[2])
     else:
-        val = t[2]
+        val = t[2].eval(variables) if isinstance(t[2], ex.Expression) else t[2]
+        if isinstance(val, ex.Expression):
+            raise(NameError("dim statement has undefined variable(s):\n\t"
+                            + val.get_undefined().keys()))
     print(val.dimensionstr())
 
 
 def p_analyze(t):
-    'analyzestatement : ANALYZE UNITS LBRAC varlist RBRAC'
+    'analyzestatement : ANALYZE UNITS LBRAC exprlist RBRAC'
     global soln_ctr
 
+    # target dimension for the anlysis
     target = uparse(t[2])
-    val_list = [var_lookup(var) for var in t[4]]
+
+    # check that each expression in the list is actually a variable
+    # name, and the variable is fully defined (has no free variables
+    # itself)
+    var_list = []
+    val_list = []
+    for var in t[4]:
+        if not isinstance(var, ex.VarExpr):
+            raise(TypeError("Expected variable name, got " + str(var)))
+        var_list.append(var.name)
+        val = var.eval(variables)
+        if isinstance(val, ex.Expression):
+            raise(TypeError("Can only analyze fully defined expressions"))
+        val_list.append(val)
+
+    # perform the analysis
     solns = CN.analyze(val_list, target)
 
     # delete old solution variables
     for i in range(0, soln_ctr):
         variables.pop("solution" + str(i), None)
     soln_ctr = 0
+    # define new variables for all solutions we found.
     for s in solns:
         sol_str = ""
         sol = CN()
-        for name, val in zip(t[4], s):
+        for name, val in zip(var_list, s):
             if val[1] != 0:
                 sol *= val[0]**val[1]
                 sol_str += ' * ' + name
                 if val[1] != 1:
                     sol_str += '^' + str(val[1])
-        var_str = "solution" + str(soln_ctr)
+        var_str = "_" + str(soln_ctr)
         sol_str = CN.make_super(sol_str)
         print(var_str + ' =' + sol_str[2:] + ' = ' + sol.__str__(t[2]))
         variables[var_str] = sol
@@ -699,22 +738,46 @@ def p_analyze(t):
         print("No solution found for analysis problem", file=sys.stderr)
 
 
-def p_varlist(t):
-    '''
-    varlist : varlist COMMA IDENTIFIER
-            | IDENTIFIER
-    '''
-    if len(t) == 2:
-        t[0] = [t[1]]
-    else:
-        t[0] = t[1]
-        t[0].append(t[3])
+def p_newfunc(t):
+    'newfunc : IDENTIFIER LPAR exprlist RPAR ASSIGN expr'
+    if t[1] in functions.keys():
+        raise TypeError("Cannot redefine built-in function "+t[1])
+
+    # check that each expression in the parameter list is actually a
+    # variable name
+    param_list = []
+    for var in t[3]:
+        if isinstance(var, ex.VarExpr):
+            param_list.append(var.name)
+        else:
+            raise(TypeError("Expected variable name, got "+var))
+
+    # prevent substitution of parameters here to implement proper
+    # argument scoping
+    scope_vars = dict(variables)
+    for param in param_list:
+        scope_vars.pop(param,True)
+    t[0] = t[6].eval(scope_vars) \
+        if isinstance(t[6], ex.Expression) else t[6]
+
+    # we don't allow free variables
+    for v in t[0].get_undefined():
+        if v not in param_list:
+            raise NameError("Undefined variable: " + v)
+
+    user_functions[t[1]] = (param_list, t[0])
+    print("New function " + t[1] + '(' + ', '.join(a for a in param_list)
+          + ') = ' + str(t[0]))
 
 
 def p_tstatement_typecast(t):
     'typestatement : UNITS statement'
     t[0] = t[2]
-    print(t[2].__str__(t[1]))
+    if isinstance(t[0], ex.Expression):
+        print("Can only unit-convert fully defined quantities",
+              file=sys.stderr)
+    else:
+        print(t[2].__str__(t[1]))
 
 
 def p_tstatement_plain(t):
@@ -725,67 +788,131 @@ def p_tstatement_plain(t):
 
 def p_statement_assign(t):
     'statement : IDENTIFIER ASSIGN expr'
-    t[0] = t[3]
+    t[0] = t[3].eval(variables) \
+        if isinstance(t[3], ex.Expression) else t[3]
+
+    # we don't allow free variables
+    if isinstance(t[0], ex.Expression):
+        for v in t[0].get_undefined():
+            raise NameError("Undefined variable: " + v)
+
     if t[1][0] == '_':
         print("Cannot define new constants...", file=sys.stderr)
     else:
-        variables[t[1]] = t[3]  # store new / updated variable
+        variables[t[1]] = t[0]  # store new / updated variable
         print(t[1], end=' = ')
 
 
 def p_statement_expr(t):
     'statement : expr'
-    t[0] = t[1]
+    t[0] = t[1].eval(variables) \
+        if isinstance(t[1], ex.Expression) else t[1]
 
 
 def p_expr_binop(t):
     '''
     expr : expr ADD expr
-    expr : expr SUB expr
-    expr : expr MUL expr
-    expr : expr DIV expr
+         | expr SUB expr
+         | expr MUL expr
+         | expr DIV expr
+         | expr EXP expr
+         | expr ROOT expr
     '''
-    if t[2] == '+':
-        t[0] = t[1] + t[3]
-    elif t[2] == '-':
-        t[0] = t[1] - t[3]
-    elif t[2] == '*':
-        t[0] = t[1] * t[3]
-    elif t[2] == '/':
-        t[0] = t[1] / t[3]
+    if isinstance(t[1], ex.Expression) or isinstance(t[3], ex.Expression):
+        # dealing with partially defined expression -- create expression tree
+        t[0] = ex.BinOpExpr(t[2], t[1], t[3])
+    else:
+        # otherwise, evaluate directly
+        if t[2] == '+':
+            t[0] = t[1] + t[3]
+        elif t[2] == '-':
+            t[0] = t[1] - t[3]
+        elif t[2] == '*':
+            t[0] = t[1] * t[3]
+        elif t[2] == '/':
+            t[0] = t[1] / t[3]
+        elif t[2] == '^':
+            t[0] = t[1] ** t[3]
+        elif t[2] == '\u221a':
+            t[0] = cn.root(t[3], t[1])
+
+
+# exponent as superscipt
+def p_expr_exp(t):
+    '''
+    expr : expr EXPS %prec EXP
+    '''
+    if isinstance(t[1], ex.Expression):
+        t[0] = ex.BinOpExpr('^', t[1], t[2])
+    else:
+        t[0] = t[1]**t[2]
+
+
+# unary root == square root
+def p_expr_uroot(t):
+    'expr : ROOT expr %prec UROOT'
+    if isinstance(t[2], ex.Expression):
+        t[0] = ex.UniOpExpr(t[1], t[2])
+    else:
+        t[0] = cn.root(t[2], 2)
+
+
+# unary minus
+def p_expr_uminus(t):
+    'expr : SUB expr %prec UMINUS'
+    if isinstance(t[2], ex.Expression):
+        t[0] = ex.UniOpExpr(t[1], t[2])
+    else:
+        t[0] = -t[2]
 
 
 def p_expr_unitmul(t):
     'expr : expr UNITS'
-    t[0] = t[1] * uparse(t[2])
+    arg2 = uparse(t[2])
+    if isinstance(t[1], ex.Expression):
+        t[0] = ex.BinOpExpr('*', t[1], arg2)
+    else:
+        t[0] = t[1] * arg2
 
 
-def p_expr_exp(t):
+def p_expr_func(t):
+    'expr : IDENTIFIER LPAR exprlist RPAR'
+    # first, evaluate all parameters
+    param_vals = [p.eval(variables) if isinstance(p, ex.Expression) else p
+                  for p in t[3]]
+
+    # check for free variables
+    for p in param_vals:
+        if isinstance(p, ex.Expression):
+            for v in p.get_undefined():
+                raise NameError("Undefined variable: " + v)
+    
+    if t[1] in functions:
+        # builtin function
+        t[0] = functions[t[1]](*param_vals)
+    elif t[1] in user_functions:
+        # user defined function
+        par_names, body = user_functions[t[1]]
+        if len(par_names) != len(param_vals):
+            raise(TypeError("Wrong number of arguments for function " + t[1] +
+                            "({:0} instead of {:1})".format(len(param_vals),
+                                                            len(par_names))))
+        params = {n: v for n, v in zip(par_names, param_vals)}
+        t[0] = body.eval(params)
+    else:
+        raise(NameError("Unknown function "+t[1]))
+
+
+def p_expr_list(t):
     '''
-    expr : expr EXP %prec EXP
-         | expr EXPS %prec EXP
+    exprlist : exprlist COMMA expr
+             | expr
     '''
-    t[0] = t[1]**t[2]
-
-
-def p_expr_root(t):
-    'expr : ROOT expr %prec ROOT'
-    t[0] = cn.root(t[2], t[1])
-
-
-def p_expr_uminus(t):
-    'expr : SUB expr %prec UMINUS'
-    t[0] = -t[2]
-
-
-def p_expr_univar(t):
-    'expr : UNIVARFUNC LPAR expr RPAR'
-    t[0] = t[1](t[3])
-
-
-def p_expr_bivar(t):
-    'expr : BIVARFUNC LPAR expr COMMA expr RPAR'
-    t[0] = t[1](t[3], t[5])
+    if len(t) == 2:
+        t[0] = [t[1]]
+    else:
+        t[0] = t[1]
+        t[0].append(t[3])
 
 
 def p_expr_group(t):
@@ -798,12 +925,12 @@ def p_expr_const(t):
     expr : INT
     expr : NUMBER
     '''
-    t[0] = t[1] * CN(1)
+    t[0] = CN(t[1])
 
 
 def p_expr_var(t):
     'expr : IDENTIFIER'
-    t[0] = var_lookup(t[1])
+    t[0] = ex.VarExpr(t[1])
 
 
 def p_error(t):
@@ -831,7 +958,7 @@ def main():
             print("Expecting at most 1 commandline argument", file=sys.stderr)
             exit(1)
     else:
-        # interactive mode    
+        # interactive mode
         print('Welcome to the dimensional analysis calculator!')
         print('Try "?" for help...')
         while True:
@@ -847,7 +974,7 @@ def main():
                 print(te, file=sys.stderr)
             except Exception as exc:
                 print(exc, file=sys.stderr)
-                
+
         print("\nGoodbye...")
 
 
