@@ -1098,7 +1098,8 @@ def exp(exponent):
     Returns:
         e ^ exponent
     '''
-    return math.e ** exponent
+    exponent.check_dimensionless()
+    return ConcreteNumber(val=cnmath.exp(exponent.value))
 
 
 def log(val, base=math.e):

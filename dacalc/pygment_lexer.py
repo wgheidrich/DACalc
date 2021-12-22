@@ -18,10 +18,10 @@ class DALexer(RegexLexer):
     tokens = {
         'root': [
             (r'\s+', t.Text),
-            (r'\#[^\n]*\n', t.Comment),
-            (r'\[[^\]]*\]', t.String),
-            (r'"[^"]*"', t.Generic.Strong),
-            (r'(def|use|output|dim|import|analyze|\?)', t.Keyword),
+            (r'\#[^\n]*\n?', t.Comment),
+            (r'\[[^\]]*\]?', t.String),
+            (r'"[^"]*"?', t.Generic.Strong),
+            (r'(def|use|output|dim|import|image|analyze|\?)', t.Keyword),
             ((r'(sqrt|sin|cos|tan|asin|acos|atan|atan2|'
               r'abs|log|ln|log2|log10|pow)'), t.Name.Function),
             (r'[a-zA-Z_]+', t.Name.Variable),

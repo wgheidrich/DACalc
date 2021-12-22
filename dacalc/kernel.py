@@ -5,7 +5,11 @@ from contextlib import redirect_stderr
 from contextlib import redirect_stdout
 from ipykernel.kernelbase import Kernel
 from dacalc.calculator import parse
-# from dacalc.concretenumber import ConcreteNumber as CN
+
+import numpy
+import matplotlib.pyplot as plt
+import base64
+import io
 
 
 class DAKernel(Kernel):
@@ -28,23 +32,26 @@ try '?' for help...
                    allow_stdin=False):
         error = False
         output = ""
-        help_msg = ""
+        
         # although the parser can handle multi-line input, we go line
         # by line so that error messages are in the right spot
+        results = []
         for line in code.splitlines():
             with io.StringIO() as buf, redirect_stdout(buf), \
                  io.StringIO() as err_buf, redirect_stderr(err_buf):
                 try:
-                    help_msg += parse(line)
+                    results += parse(line)
                 except Exception as exc:
                     print(exc, file=sys.stderr)
                     error = True
                 error_msg = err_buf.getvalue()
                 if error_msg != "":
                     output = "<font color=#FF5733>" + error_msg + "</font>"
-                output += buf.getvalue()
+                data = buf.getvalue()
+                if isinstance(data,str):
+                    output += data
 
-        if not silent:
+        if isinstance(output,str) and not silent:
             # output is HTML so that special characters and tags can
             # be used in user messages
             output = "<tt>" + re.sub("\n", "<br>", output) + "</tt>"
@@ -54,11 +61,27 @@ try '?' for help...
                                 "data": {"text/html": output},
                                 "metadata": {}})
 
-        if type(help_msg) != str or help_msg == "":
-            popup = []
+        # look for images and paged text in the results and show them
+        help_msg = ""
+        for item in results:
+            if isinstance(item, str):
+                # concatenate all help messages into a single string
+                if item != "":
+                    help_msg += "\n\n---\n\n" + item
+            elif isinstance(item, numpy.ndarray):
+                # convert arrays to images and send display message
+                buf = io.BytesIO()
+                plt.imsave(buf, arr=item, format='png')
+                buf.seek(0)
+                png_string = base64.b64encode(buf.read()).decode('utf-8')
+                self.send_response(self.iopub_socket, 'display_data',
+                                   {"data": {"image/png": png_string},
+                                    "metadata": {}})
+            
+        if help_msg != "":
+            popup = [{"source": "page", "data": {"text/plain": help_msg}}]
         else:
-            popup = [{"source": "page",
-                      "data": {"text/plain": help_msg}}]
+            popup = []
 
         return {'status': 'error' if error else 'ok',
                 # The base class increments the execution count

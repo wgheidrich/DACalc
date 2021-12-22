@@ -14,6 +14,9 @@ from dacalc.unitparser import parse as uparse
 import dacalc.conversions as conv
 import dacalc.expression as ex
 
+import matplotlib.pyplot as plt
+import numpy
+
 
 #######
 # data structures
@@ -79,6 +82,7 @@ tokens = (
     'OUTPUT',
     'DEF',
     'LOAD',
+    'IMAGE',
     'DIM',
     'ANALYZE',
     'LPAR',
@@ -142,6 +146,8 @@ def t_IDENTIFIER(t):
         t.type = "DEF"
     elif t.value == "import":
         t.type = "LOAD"
+    elif t.value == "image":
+        t.type = "IMAGE"
     elif t.value == "dim":
         t.type = "DIM"
     elif t.value == "analyze":
@@ -239,9 +245,12 @@ def p_lineseq(t):
     lines : lines NEWLINE line
           | line
     '''
-    t[0] = t[1] if type(t[1]) == str else ""
-    if len(t) == 4 and type(t[3]) == str:
-        t[0] + t[3]
+    # concatenate all the results for the lines into a list
+    if len(t) == 4:
+        t[0] = t[1]
+        t[0].append(t[3])
+    else:
+        t[0] = [t[1]]
 
 
 def p_oneline(t):
@@ -252,14 +261,16 @@ def p_oneline(t):
          | unitdef
          | helpline
          | loadstatement
+         | imgstatement
          | stringstatement
          | dimstatement
          | analyzestatement
          | newfunc
          | empty
     '''
-    if t[1] is not None:
+    if isinstance(t[1],CN):
         variables['_'] = t[1]
+    if t[1] is not None:
         t[0] = t[1]
 
 
@@ -362,6 +373,14 @@ def p_helpline(t):
                         well as SI_base and US_base. The latter two only
                         utilize base units, so that for example a force
                         would be displayed as [kg m s^-2] instead of [N]
+
+                        DA calc also supports obsolete systmes based on
+                        centimetre-gram-second including just base
+                        units (CGS_base), Gauss units (CGS or CGS_Gauss),
+                        CGS plus electrostatic units (CGS_ESU) and CGS plus
+                        electromagentic units (CGS_EMU). Selection of any of
+                        these also implies half dimensions (see "use halfdim"
+                        below).
 
         use [unit] :    choose a default unit for quantities of a specific
                         dimension. Examples:
@@ -661,13 +680,17 @@ def p_def(t):
 
 def p_load(t):
     'loadstatement : LOAD STRING'
-    f = open(t[2])
-    script = f.read()
-    f.close()
+    with open(t[2]) as f:
+        script = f.read()
     new_lexer = da_lexer.clone()
     with io.StringIO() as buf, redirect_stdout(buf):
         # only error messages will be reported
         da_parser.parse(script, lexer=new_lexer)
+
+
+def p_image(t):
+    'imgstatement : IMAGE STRING'
+    t[0] = plt.imread(t[2])
 
 
 def p_string(t):
@@ -742,7 +765,9 @@ def p_newfunc(t):
     'newfunc : IDENTIFIER LPAR exprlist RPAR ASSIGN expr'
     if t[1] in functions.keys():
         raise TypeError("Cannot redefine built-in function "+t[1])
-
+    if t[6] is None:
+        raise(TypeError("Assignment needs right hand side"))
+    
     # check that each expression in the parameter list is actually a
     # variable name
     param_list = []
@@ -788,6 +813,9 @@ def p_tstatement_plain(t):
 
 def p_statement_assign(t):
     'statement : IDENTIFIER ASSIGN expr'
+    if t[3] is None:
+        raise(TypeError("Assignment needs right hand side"))
+
     t[0] = t[3].eval(variables) \
         if isinstance(t[3], ex.Expression) else t[3]
 
@@ -934,7 +962,10 @@ def p_expr_var(t):
 
 
 def p_error(t):
-    print("Syntax error at '%s'" % t.value, file=sys.stderr)
+    if t is None:
+        raise(SyntaxError("Syntax error: premature end of line"))
+    else:
+        raise(SyntaxError("Syntax error at '%s'" %  t.value))
 
 
 da_parser = yacc.yacc(optimize=1, tabmodule='dacalc.daparsetab')
@@ -945,8 +976,11 @@ def parse(s):
 
 
 def main():
-    import readline   # noqa: F401 # doesn't look like it's used, but it is!
-
+    from dacalc.pygment_lexer import DALexer
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.shortcuts import prompt
+    from prompt_toolkit.lexers import PygmentsLexer
+    
     if len(sys.argv) > 1:
         # do some more sophisticated argument parsing here in the future
         if len(sys.argv) == 2:
@@ -961,15 +995,21 @@ def main():
         # interactive mode
         print('Welcome to the dimensional analysis calculator!')
         print('Try "?" for help...')
+        session = PromptSession(lexer=PygmentsLexer(DALexer))
         while True:
             try:
-                s = input('DA > ')
+                s = session.prompt('DA > ')
             except EOFError:
                 break
             try:
-                help_msg = parse(s)
-                if type(help_msg) == str and help_msg != "":
-                    pager(help_msg)
+                results = parse(s)
+                for item in results:
+                    if isinstance(item, str) and item != "":
+                        pager(item)
+                    elif isinstance(item, numpy.ndarray):
+                        plt.imshow(item)
+                        plt.show()
+#                        plt.close()
             except TypeError as te:
                 print(te, file=sys.stderr)
             except Exception as exc:
