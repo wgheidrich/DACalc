@@ -466,7 +466,7 @@ def p_helpline(t):
                         DA > h =  1[m]
                         h = 1 [m]
                         DA > analyze [J] {m,h,_g}
-                        solution0 = m * h * _g = 29.42 [J]
+                        _0 = m * h * _g = 29.42 [J]
 
         '''
     elif t[2] == 'operators'[:len(t[2])]:
@@ -735,9 +735,15 @@ def p_analyze(t):
             raise(TypeError("Can only analyze fully defined expressions"))
         val_list.append(val)
 
-    # perform the analysis
-    solns = CN.analyze(val_list, target)
-
+    # perform the analysis -- first find direct combinations, then, if
+    # none are found, solutions that are the square or cube of the
+    # target
+    rt = 0
+    solns = []
+    while len(solns) == 0 and rt<3:
+        rt += 1
+        solns = CN.analyze(val_list, target**rt)
+    
     # delete old solution variables
     for i in range(0, soln_ctr):
         variables.pop("solution" + str(i), None)
@@ -752,8 +758,15 @@ def p_analyze(t):
                 sol_str += ' * ' + name
                 if val[1] != 1:
                     sol_str += '^' + str(val[1])
-        var_str = "_" + str(soln_ctr)
+        if rt>1:
+            sol_str = '   root(' + sol_str[3:] + ',' + str(rt) + ')'
+            try:
+                sol = cn.root(sol,rt)
+            except ValueError:
+                print('Found complex valued solution')
+                break
         sol_str = CN.make_super(sol_str)
+        var_str = "_" + str(soln_ctr)
         print(var_str + ' =' + sol_str[2:] + ' = ' + sol.__str__(t[2]))
         variables[var_str] = sol
         soln_ctr += 1

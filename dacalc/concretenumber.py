@@ -341,6 +341,7 @@ class ConcreteNumber:
             for e1, e2 in zip(exp1, exp2):
                 if e2 != 0:
                     mult = e1 // e2
+                    break
             for e1, e2 in zip(exp1, exp2):
                 if e1 != mult * e2:
                     return False
