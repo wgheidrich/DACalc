@@ -1279,7 +1279,7 @@ us_u = []
 # US length
 new_unit(us_u,("in",   ConcreteNumber(25.4,"mm"),            "inch"))
 new_unit(us_u,("ft",   ConcreteNumber(12,"in"),              "foot"))
-new_unit(us_u,("yd",   ConcreteNumber(26,"in"),              "yard"))
+new_unit(us_u,("yd",   ConcreteNumber(36,"in"),              "yard"))
 new_unit(us_u,("mi",   ConcreteNumber(63360,"in"),           "mile"))
 new_unit(us_u,("mil",  ConcreteNumber(1e-3,"in"),            "mil"))
 new_unit(us_u,("thou", ConcreteNumber(1,"mil"),              "thou"))
